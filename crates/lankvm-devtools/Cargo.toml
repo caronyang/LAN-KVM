@@ -1,0 +1,14 @@
+[package]
+name = "lankvm-devtools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+lankvm-clipboard = { path = "../lankvm-clipboard" }
+lankvm-core = { path = "../lankvm-core" }
+lankvm-files = { path = "../lankvm-files" }
+lankvm-net = { path = "../lankvm-net" }
+lankvm-platform = { path = "../lankvm-platform" }

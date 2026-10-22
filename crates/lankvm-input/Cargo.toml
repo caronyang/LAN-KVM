@@ -1,0 +1,9 @@
+[package]
+name = "lankvm-input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lankvm-core = { path = "../lankvm-core" }

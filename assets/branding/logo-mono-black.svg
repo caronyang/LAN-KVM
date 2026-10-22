@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="title desc">
+  <title id="title">LAN-KVM mark — mono black</title>
+  <desc id="desc">Single-color black mark for print and stamps.</desc>
+  <g fill="none" stroke="#000000" stroke-width="18">
+    <rect x="56" y="144" width="148" height="224" rx="22"/>
+    <rect x="308" y="144" width="148" height="224" rx="22"/>
+  </g>
+  <path d="M130 256 L204 218 L204 244 H308 V218 L382 256 L308 294 V268 H204 V294 Z" fill="#000000"/>
+</svg>

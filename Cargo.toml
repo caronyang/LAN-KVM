@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lankvm-core",
+    "crates/lankvm-platform",
+    "crates/lankvm-input",
+    "crates/lankvm-net",
+    "crates/lankvm-agent",
+    "crates/lankvm-devtools",
+    "crates/lankvm-service",
+    "crates/lankvm-clipboard",
+    "crates/lankvm-files",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+rust-version = "1.80"
+
+[workspace.dependencies]
+anyhow = "1.0"
+arboard = "3.7"
+blake3 = "1.8"
+clipboard-win = "5.4"
+crossbeam-channel = "0.5"
+image = { version = "=0.25.9", default-features = false, features = ["png"] }
+postcard = { version = "1.1", features = ["alloc"] }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+windows-service = "0.8"
+windows-sys = "0.61"
+
+# Debuggable but optimized: useful for latency tests when the release
+# devtools binary is blocked by endpoint security.
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 2
+debug = 1

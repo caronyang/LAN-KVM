@@ -1,0 +1,20 @@
+[package]
+name = "lankvm-clipboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+arboard.workspace = true
+image.workspace = true
+postcard.workspace = true
+serde.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win.workspace = true
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+] }

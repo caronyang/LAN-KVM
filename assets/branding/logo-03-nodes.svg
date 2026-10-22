@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="title desc">
+  <title id="title">LAN-KVM logo — Nodes</title>
+  <desc id="desc">Three monitors representing left, center, and right computers, with the center highlighted in cyan.</desc>
+  <rect width="512" height="512" rx="112" fill="#0B1220"/>
+  <g fill="none" stroke="#F8FAFC" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="44" y="162" width="116" height="84" rx="16"/>
+    <path d="M102 246 V290 M74 290 H130"/>
+    <rect x="352" y="162" width="116" height="84" rx="16"/>
+    <path d="M410 246 V290 M382 290 H438"/>
+  </g>
+  <rect x="184" y="142" width="144" height="104" rx="20" fill="#22D3EE"/>
+  <g fill="none" stroke="#22D3EE" stroke-width="16" stroke-linecap="round">
+    <path d="M256 246 V290 M228 290 H284"/>
+  </g>
+</svg>

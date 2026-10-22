@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="title desc">
+  <title id="title">LAN-KVM logo — Switch</title>
+  <desc id="desc">A minimal toggle switch with a cyan knob representing switching control between computers.</desc>
+  <rect width="512" height="512" rx="112" fill="#0B1220"/>
+  <rect x="80" y="176" width="352" height="160" rx="80" fill="none" stroke="#F8FAFC" stroke-width="20"/>
+  <circle cx="352" cy="256" r="52" fill="#22D3EE"/>
+</svg>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LAN-KVM — Logo directions</title>
+  <style>
+    :root {
+      --ink: #0B1220;
+      --ink-2: #111A2B;
+      --paper: #F8FAFC;
+      --muted: #94A3B8;
+      --cyan: #22D3EE;
+      --line: rgba(148, 163, 184, .18);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+      background: #070B14;
+      color: var(--paper);
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 80px; }
+    header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 42px; }
+    .eyebrow { color: var(--cyan); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; font-weight: 700; }
+    h1 { margin: 10px 0 8px; font-size: clamp(28px, 4vw, 46px); letter-spacing: -.03em; line-height: 1.05; }
+    .sub { margin: 0; color: var(--muted); max-width: 620px; line-height: 1.7; font-size: 14px; }
+    .wordmark { font-weight: 800; letter-spacing: -.04em; font-size: 20px; white-space: nowrap; }
+    .wordmark em { color: var(--cyan); font-style: normal; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+    }
+    .stage {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 270px;
+    }
+    .stage > div { display: flex; align-items: center; justify-content: center; padding: 28px; }
+    .on-light { background: var(--paper); }
+    .on-dark { background: #0F172A; }
+    .logo-256 { width: 190px; height: 190px; display: block; filter: drop-shadow(0 18px 34px rgba(0,0,0,.28)); }
+    .meta { padding: 22px 24px 24px; border-top: 1px solid var(--line); }
+    .meta h2 { margin: 0 0 8px; font-size: 17px; letter-spacing: -.01em; }
+    .meta h2 span { color: var(--muted); font-weight: 500; font-size: 13px; margin-left: 8px; }
+    .meta p { margin: 0; color: var(--muted); line-height: 1.65; font-size: 13.5px; }
+    .sizes { display: flex; align-items: flex-end; gap: 18px; margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line); }
+    .sizes figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+    .sizes img { display: block; }
+    .sizes .s64 img { width: 64px; height: 64px; }
+    .sizes .s32 img { width: 32px; height: 32px; }
+    .sizes .s16 img { width: 16px; height: 16px; }
+    .palette { display: flex; gap: 12px; flex-wrap: wrap; margin: 34px 0 0; }
+    .swatch { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 132px; }
+    .dot { width: 18px; height: 18px; border-radius: 6px; display: inline-block; vertical-align: -3px; margin-right: 8px; }
+    .swatch b { font-size: 12px; letter-spacing: .02em; }
+    .swatch small { display: block; color: var(--muted); margin-top: 4px; font-size: 11px; }
+    .note { margin-top: 34px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 18px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .note strong { color: var(--paper); }
+    @media (max-width: 880px) {
+      .grid { grid-template-columns: 1fr; }
+      header { align-items: flex-start; flex-direction: column; }
+    }
+    @media (max-width: 520px) {
+      .wrap { padding: 36px 18px 60px; }
+      .stage { grid-template-columns: 1fr; }
+      .on-dark { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="eyebrow">Brand identity · 定案 2026-10</div>
+        <h1>LAN-KVM Logo — Seam</h1>
+        <p class="sub">定案版本：兩個螢幕輪廓，中間是左右雙向箭頭；兩個箭頭各跨過左右螢幕內側的一半。深藍底 + 青色重點，適合系統匣、安裝檔與 App Icon。</p>
+      </div>
+      <div class="wordmark">LAN<em>-</em>KVM</div>
+    </header>
+
+    <main class="grid">
+      <article class="card">
+        <div class="stage">
+          <div class="on-light"><img class="logo-256" src="logo-01-seam.svg" alt="Seam logo"></div>
+          <div class="on-dark"><img class="logo-256" src="logo-01-seam.svg" alt="Seam logo"></div>
+        </div>
+        <div class="meta">
+          <h2>01 Seam <span>無縫 · 定案</span></h2>
+          <p>兩個螢幕輪廓，中間以左右雙向箭頭表示雙向切換。最直接表達「滑過去就切換」，辨識度高，適合當主要圖示。</p>
+          <div class="sizes">
+            <figure class="s64"><img src="logo-01-seam.svg" alt=""><figcaption>64</figcaption></figure>
+            <figure class="s32"><img src="logo-01-seam.svg" alt=""><figcaption>32</figcaption></figure>
+            <figure class="s16"><img src="logo-01-seam.svg" alt=""><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="stage">
+          <div class="on-light"><img class="logo-256" src="logo-02-k.svg" alt="K logo"></div>
+          <div class="on-dark"><img class="logo-256" src="logo-02-k.svg" alt="K logo"></div>
+        </div>
+        <div class="meta">
+          <h2>02 K <span>字母</span></h2>
+          <p>用螢幕邊框與輸入線條構成 K。最抽象、最像一個「品牌」，在 16 px 與單色印刷時最清楚。</p>
+          <div class="sizes">
+            <figure class="s64"><img src="logo-02-k.svg" alt=""><figcaption>64</figcaption></figure>
+            <figure class="s32"><img src="logo-02-k.svg" alt=""><figcaption>32</figcaption></figure>
+            <figure class="s16"><img src="logo-02-k.svg" alt=""><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="stage">
+          <div class="on-light"><img class="logo-256" src="logo-03-nodes.svg" alt="Nodes logo"></div>
+          <div class="on-dark"><img class="logo-256" src="logo-03-nodes.svg" alt="Nodes logo"></div>
+        </div>
+        <div class="meta">
+          <h2>03 Nodes <span>左中右</span></h2>
+          <p>三個節點，中間以青色標示主控端。直接對應「左 / 中 / 右」的電腦位置，適合作為產品圖示。</p>
+          <div class="sizes">
+            <figure class="s64"><img src="logo-03-nodes.svg" alt=""><figcaption>64</figcaption></figure>
+            <figure class="s32"><img src="logo-03-nodes.svg" alt=""><figcaption>32</figcaption></figure>
+            <figure class="s16"><img src="logo-03-nodes.svg" alt=""><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="stage">
+          <div class="on-light"><img class="logo-256" src="logo-04-bridge.svg" alt="Bridge logo"></div>
+          <div class="on-dark"><img class="logo-256" src="logo-04-bridge.svg" alt="Bridge logo"></div>
+        </div>
+        <div class="meta">
+          <h2>04 Bridge <span>橋接</span></h2>
+          <p>兩個螢幕以弧線橋接，語氣較柔和、友善。適合希望品牌不要那麼「硬科技」的方向。</p>
+          <div class="sizes">
+            <figure class="s64"><img src="logo-04-bridge.svg" alt=""><figcaption>64</figcaption></figure>
+            <figure class="s32"><img src="logo-04-bridge.svg" alt=""><figcaption>32</figcaption></figure>
+            <figure class="s16"><img src="logo-04-bridge.svg" alt=""><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="card" style="grid-column: 1 / -1;">
+        <div class="stage" style="grid-template-columns: 1.15fr .85fr;">
+          <div class="on-light"><img class="logo-256" src="logo-05-switch.svg" alt="Switch logo"></div>
+          <div class="on-dark"><img class="logo-256" src="logo-05-switch.svg" alt="Switch logo"></div>
+        </div>
+        <div class="meta">
+          <h2>05 Switch <span>切換</span></h2>
+          <p>一顆極簡 toggle。最抽象、最安靜，像一個系統工具而不是「螢幕共享軟體」；缺點是與 KVM 的連結較弱，需要靠名稱補足。</p>
+          <div class="sizes">
+            <figure class="s64"><img src="logo-05-switch.svg" alt=""><figcaption>64</figcaption></figure>
+            <figure class="s32"><img src="logo-05-switch.svg" alt=""><figcaption>32</figcaption></figure>
+            <figure class="s16"><img src="logo-05-switch.svg" alt=""><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <div class="palette">
+      <div class="swatch"><span class="dot" style="background:#0B1220"></span><b>Ink</b><small>#0B1220</small></div>
+      <div class="swatch"><span class="dot" style="background:#22D3EE"></span><b>Cyan</b><small>#22D3EE</small></div>
+      <div class="swatch"><span class="dot" style="background:#F8FAFC"></span><b>Paper</b><small>#F8FAFC</small></div>
+      <div class="swatch"><span class="dot" style="background:#F59E0B"></span><b>Amber</b><small>#F59E0B · 警示用</small></div>
+    </div>
+
+    <div class="note">
+      <strong>已定案：01 Seam。</strong> 圖示包已輸出：SVG 主檔、單色版、16–1024 px PNG、Windows ICO、macOS ICNS、系統匣 template icon、深/淺色版。檔案在 <a href="icons/" style="color:#22D3EE">icons/</a>；使用規範見 <a href="README.md" style="color:#22D3EE">README.md</a>。
+      <br><br>
+      快速下載：<a href="icons/lankvm-512.png" style="color:#22D3EE">512 PNG</a> · <a href="icons/lankvm.ico" style="color:#22D3EE">Windows ICO</a> · <a href="icons/lankvm.icns" style="color:#22D3EE">macOS ICNS</a> · <a href="logo.svg" style="color:#22D3EE">SVG</a>
+    </div>
+  </div>
+</body>
+</html>

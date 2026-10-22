@@ -1,0 +1,4 @@
+# LAN-KVM session agent configuration
+# Uncomment the next line to let the service session agent receive P0 UDP
+# packets on localhost/LAN. Use only on an isolated test machine.
+# client_port=45871
