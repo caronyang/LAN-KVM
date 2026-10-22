@@ -12,6 +12,7 @@
 - [P0 兩台實機測試結果](docs/05-p0-results.md)
 - [服務 + 登入畫面 PoC](docs/06-service-login-poc.md)
 - [v0.1-local 單機驗證](docs/07-local-verification.md)
+- [研發歷程與接手說明](docs/08-development-history.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 - [Logo 與品牌資產](assets/branding/gallery.html)（規範：`assets/branding/README.md`）
 
