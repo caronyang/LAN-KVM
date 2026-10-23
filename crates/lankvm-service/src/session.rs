@@ -91,6 +91,9 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
         let release_px = crate::config::load().release_px.unwrap_or(2);
         if let Err(err) = net::start_client(port, stop.clone(), release_px) {
             log("session", format!("UDP client failed: {err:#}"));
+            // Exit so the service health check can restart a clean agent
+            // instead of leaving a half-alive process without a listener.
+            return Err(err);
         }
         // The user app is not running at the login screen; announce its
         // persistent id from the SYSTEM agent so a paired peer can find us.

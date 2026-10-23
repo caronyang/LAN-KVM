@@ -1,9 +1,12 @@
 use std::ffi::{OsStr, OsString};
+use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
+
+use lankvm_net::{Packet, PacketKind};
 
 use anyhow::{Context, Result};
 use windows_service::define_windows_service;
@@ -90,6 +93,8 @@ fn run_service() -> Result<()> {
     let mut last_attempt = Instant::now() - Duration::from_secs(30);
     let mut last_active_log = u32::MAX;
     let mut last_active_seen = u32::MAX;
+    let mut last_health = Instant::now();
+    let mut health_failures = 0u32;
 
     while shutdown_rx.try_recv().is_err() {
         let active = active_session();
@@ -154,6 +159,37 @@ fn run_service() -> Result<()> {
             last_attempt = Instant::now();
         }
 
+        if let Some(port) = config.client_port {
+            if last_health.elapsed() >= Duration::from_secs(5) {
+                last_health = Instant::now();
+                let running = child.as_ref().map(|c| c.is_running()).unwrap_or(false);
+                if running {
+                    if probe_client(port) {
+                        health_failures = 0;
+                    } else {
+                        health_failures = health_failures.saturating_add(1);
+                        log(
+                            "service",
+                            format!("client health probe failed ({health_failures}/3)"),
+                        );
+                        if health_failures >= 3 {
+                            log(
+                                "service",
+                                "restarting session agent: UDP client not responding",
+                            );
+                            if let Some(mut old) = child.take() {
+                                old.stop();
+                            }
+                            health_failures = 0;
+                            last_attempt = Instant::now() - Duration::from_secs(5);
+                        }
+                    }
+                } else {
+                    health_failures = 0;
+                }
+            }
+        }
+
         thread::sleep(Duration::from_secs(1));
     }
 
@@ -184,20 +220,34 @@ fn run_service() -> Result<()> {
     Ok(())
 }
 
+fn probe_client(port: u16) -> bool {
+    let Ok(socket) = UdpSocket::bind(("127.0.0.1", 0)) else {
+        return false;
+    };
+    let _ = socket.set_read_timeout(Some(Duration::from_millis(300)));
+    let mut ping = Packet::new(PacketKind::Ping, 0);
+    ping.a = 0;
+    if socket
+        .send_to(&ping.encode(), ("127.0.0.1", port))
+        .is_err()
+    {
+        return false;
+    }
+    let mut buffer = [0u8; 64];
+    match socket.recv_from(&mut buffer) {
+        Ok((n, _)) => Packet::decode(&buffer[..n])
+            .map(|packet| packet.kind == PacketKind::Pong && packet.d == 1)
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
 pub fn install() -> Result<()> {
     let manager = ServiceManager::local_computer(
         None::<&str>,
         ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
     )
     .context("open service manager (run as Administrator)")?;
-
-    if manager
-        .open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)
-        .is_ok()
-    {
-        println!("Service {SERVICE_NAME} is already installed.");
-        return Ok(());
-    }
 
     let exe = std::env::current_exe()?;
     let info = ServiceInfo {
@@ -212,6 +262,29 @@ pub fn install() -> Result<()> {
         account_name: None,
         account_password: None,
     };
+
+    if let Ok(service) = manager.open_service(
+        SERVICE_NAME,
+        ServiceAccess::CHANGE_CONFIG | ServiceAccess::START | ServiceAccess::QUERY_STATUS,
+    ) {
+        // Reinstall/upgrade: never leave an existing service with an old
+        // binary, a demand start type, or a stopped state.
+        service
+            .change_config(&info)
+            .context("update existing service config")?;
+        let _ = service.set_description(
+            "LAN-KVM privileged supervisor. Starts the session agent that handles input and secure desktop access.",
+        );
+        let status = service.query_status().context("query existing service")?;
+        if status.current_state != ServiceState::Running {
+            service.start::<&OsStr>(&[]).context("start existing service")?;
+        }
+        println!(
+            "Updated {SERVICE_NAME} to AutoStart and ensured it is running (was {:?}).",
+            status.current_state
+        );
+        return Ok(());
+    }
 
     let service = manager
         .create_service(&info, ServiceAccess::CHANGE_CONFIG | ServiceAccess::START)

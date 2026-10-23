@@ -215,13 +215,22 @@ Log：
 
 > 這樣 B 換 IP、或 B 先開機停在登入頁，A 都能用 ID 找到它；不需要手動改 IP。
 
+### 5.4 服務自我修復（開機/登入頁）
+
+- 服務安裝改成 **idempotent**：已存在也會更新為 `AutoStart`、更新 binary path，並確保啟動；不會再只印 “already installed”。
+- 服務每 5 秒對 agent 的 UDP 45872 做 P0 Ping/Pong（要求 `d=1`）：
+  - 連續 3 次失敗 → 停止並重啟 session agent。
+  - log：`client health probe failed (n/3)`、`restarting session agent: UDP client not responding`。
+- agent 的 UDP client bind 失敗時**直接退出**，讓服務重拉，不再留下沒有 listener 的半死程序。
+- log：`active session -> N`、`launch_session ... desktop=Default failed ... trying Winlogon`、`launch_session ... OK`、`session agent ... exited code=...`。
+
 ---
 
 ## 6. 產物
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2-login.exe   015B08F40733125547AB6EA8788BDA856B03872EAA1413D7AD3ABFED9BB15914
+  LAN-KVM-Setup-0.2-login.exe   E649C61CA3333EDDAF877E5CC8AF8C064627DA426CA97FCDE1B4A93C43214ACB
   README.txt
 ```
 
