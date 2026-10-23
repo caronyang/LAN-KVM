@@ -141,6 +141,8 @@ A（master）→ B（service client）的 P0 UDP：
 
 這個問題必須在乾淨 VM（無 Apex One）或由 IT 放行後才能完成跨機登入畫面測試。
 
+> **2026-10-23 更新**：已在另一個場域（`192.168.68.0/22`，Win11 + McAfee）完成驗證：UDP 10/10、RTT 6–10 ms、跨機滑鼠/鍵盤、Winlogon 注入 `inject_fail=0`。原 blocker 確認為上一個場域的 EDR/網路政策，非程式問題。詳見 `docs/10-test-log-20261023.md`。
+
 ---
 
 ## 6. 測試環境與帳密/位置（交接用）

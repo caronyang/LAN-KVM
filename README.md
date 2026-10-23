@@ -2,7 +2,7 @@
 
 軟體式 KVM：在同一個網段的 2–3 台電腦之間共用一組鍵盤/滑鼠，支援無縫邊界切換、剪貼簿共享與檔案傳輸。目標平台為 Windows / macOS / Linux，目前只有 Windows 可實測。
 
-> 目前狀態：**v0.1-local 單機可驗證版**。已驗證：UDP 握手/邊界切換、游標隱藏/釘住、Raw Input、絕對游標、剪貼簿文字/圖片/檔案、剪貼簿監聽、本機檔案分塊複製、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入。跨機 UDP 目前被 Apex One/EDR 或 VM 網路阻擋，等 VM 環境放行。
+> 目前狀態：**v0.1-local 單機可驗證版**。已驗證：UDP 握手/邊界切換、游標隱藏/釘住、Raw Input、絕對游標、剪貼簿文字/圖片/檔案、剪貼簿監聽、本機檔案分塊複製、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入。2026-10-23 於新場域完成跨機驗證：A→B UDP 10/10、滑鼠/鍵盤、Winlogon 注入 `inject_fail=0`。
 
 ## 文件
 
@@ -123,8 +123,9 @@ docs/                # 技術評估、架構、測試與 AV 策略
 
 ## 下一步
 
-1. 在乾淨 VM（無 Apex One）打通 A→B UDP，測跨機 Default/Winlogon 滑鼠+鍵盤。
+1. ~~在乾淨 VM（無 Apex One）打通 A→B UDP，測跨機 Default/Winlogon 滑鼠+鍵盤。~~ **2026-10-23 新場域已完成**：UDP 10/10、Default/Winlogon 注入 `inject_fail=0`。
 2. 接上 QUIC/TLS + mDNS/配對；把 P0 UDP 換掉。
 3. 剪貼簿/檔案跨機同步（本機引擎已完成）。
 4. 絕對定位游標接入 P0/v1（改善手感）。
-5. Tauri UI、安裝檔、簽章、白名單。
+5. local takeover／雙向控制（B→A 無縫回切）。
+6. Tauri UI、安裝檔、簽章、白名單。
