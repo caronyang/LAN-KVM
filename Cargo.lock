@@ -420,6 +420,7 @@ dependencies = [
  "anyhow",
  "lankvm-net",
  "lankvm-platform",
+ "serde_json",
  "windows-service",
  "windows-sys 0.61.2",
 ]

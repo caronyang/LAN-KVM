@@ -22,6 +22,7 @@ use windows_sys::Win32::System::Threading::{
 };
 
 use crate::desktop;
+use crate::identity;
 use crate::logger::{log, log_path};
 use crate::net;
 use crate::remote_inject;use crate::worker::{take_counts, DesktopWorker};
@@ -91,6 +92,9 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
         if let Err(err) = net::start_client(port, stop.clone(), release_px) {
             log("session", format!("UDP client failed: {err:#}"));
         }
+        // The user app is not running at the login screen; announce its
+        // persistent id from the SYSTEM agent so a paired peer can find us.
+        identity::start(stop.clone(), port);
     }
 
     let mut last_desktop = String::new();

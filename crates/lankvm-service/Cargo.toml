@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+serde_json = "1"
 lankvm-net = { path = "../lankvm-net" }
 lankvm-platform = { path = "../lankvm-platform" }
 windows-service = { workspace = true }

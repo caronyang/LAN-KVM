@@ -9,6 +9,8 @@ mod config;
 #[cfg(windows)]
 mod desktop;
 #[cfg(windows)]
+mod identity;
+#[cfg(windows)]
 mod inject;
 #[cfg(windows)]
 mod launcher;

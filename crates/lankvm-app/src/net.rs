@@ -288,10 +288,70 @@ fn handle_discovery(app: &Arc<App>, value: &Value, src: IpAddr) {
         return;
     }
     app.peer_upsert(info);
+    update_paired_address(app, &id, src, p(value, "control_port"), p(value, "data_port"));
 
     if s(value, "type") == "discover" {
         let reply = base(app, "peer");
         send_to(app, &reply, src, p(value, "control_port"));
+    }
+}
+
+/// Keep the paired peer in sync with the address it currently announces.
+/// This is what makes a DHCP change survivable: the persistent id stays the
+/// same, only the IP/ports are refreshed.
+fn update_paired_address(app: &Arc<App>, id: &str, ip: IpAddr, control: u16, data: u16) {
+    let new_ip = ip.to_string();
+    let mut changed = false;
+
+    {
+        let mut config = app.config.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(peer) = config.peer_mut(id) {
+            let old_ip = peer.ip.clone();
+            let ip_changed = old_ip != new_ip;
+            let ports_changed = (control != 0 && peer.control_port != control)
+                || (data != 0 && peer.data_port != data);
+            if ip_changed || ports_changed {
+                peer.ip = new_ip.clone();
+                if control != 0 {
+                    peer.control_port = control;
+                }
+                if data != 0 {
+                    peer.data_port = data;
+                }
+                save(app.profile.as_deref(), &config);
+                changed = true;
+            }
+            if ip_changed {
+                app.log(format!("peer {id} IP updated {old_ip} -> {new_ip}"));
+            }
+        }
+    }
+
+    if !changed {
+        return;
+    }
+
+    let session = app
+        .session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let needs_restart = session
+        .map(|session| {
+            session.role == "master"
+                && session.peer_id == id
+                && (session.peer_ip != new_ip
+                    || (data != 0 && session.data_port != data))
+        })
+        .unwrap_or(false);
+
+    if needs_restart {
+        let app = app.clone();
+        thread::spawn(move || {
+            crate::engine::stop_session(&app, false);
+            *app.suppress_until.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            app.log("peer address changed; master stopped for a clean reconnect");
+        });
     }
 }
 

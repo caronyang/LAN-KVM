@@ -1,5 +1,7 @@
 use std::ffi::{OsStr, OsString};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -76,6 +78,14 @@ fn run_service() -> Result<()> {
         );
     }
 
+    // Announce this machine's persistent app id even when no user is logged
+    // in. The session agent also announces; duplicates carry the same address
+    // and are harmless.
+    let identity_stop = Arc::new(AtomicBool::new(false));
+    if let Some(port) = config.client_port {
+        crate::identity::start(identity_stop.clone(), port);
+    }
+
     let mut child: Option<Child> = None;
     let mut last_attempt = Instant::now() - Duration::from_secs(30);
     let mut last_active_log = u32::MAX;
@@ -142,6 +152,8 @@ fn run_service() -> Result<()> {
         );
         child.stop();
     }
+
+    identity_stop.store(true, Ordering::SeqCst);
 
     status.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,

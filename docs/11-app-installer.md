@@ -194,13 +194,34 @@ Winlogon: inject failed kind=Motion streak=1 err=存取被拒 (os error 5)
 - 已改為 `keybd_event` 的 virtual key 路徑（Num=0x90、Caps=0x14、Scroll=0x91），scan 仍保留給一般鍵。
 - 本機以服務 agent + Switch 封包驗證 Num Lock 會切換；數字鍵盤需 Num Lock 開啟後才有數字。
 
+### 5.3 B 先開機、停在登入頁（ID 廣播 + 換 IP）
+
+問題：B 的 App 要登入後才啟動，登入頁只有 SYSTEM 服務；A 不能用「上次配對的 IP」保證找到 B（DHCP 可能換 IP）。
+
+做法：
+- App 首次啟動就產生持久化 `id`（存在 `app.json`），配對時記錄雙方 `id`、`name`、IP、port。
+- **服務本身（session 0）與 session agent 都會**在背景讀取 `C:\Users\*\AppData\Local\LAN-KVM\app.json`，每 3 秒廣播：
+  ```json
+  {"type":"peer","id":"...","name":"...","control_port":45871,"data_port":45872,"service":true}
+  ```
+  所以即使登入頁的 session agent 還沒起來，服務也能先廣播。
+- A 的 App 收到後用 **id** 比對已配對資料；IP 或 port 變更就更新 `app.json`。
+- 若 A 已有 master 連到舊 IP，會 graceful stop 後由 supervisor 用新 IP 重連。
+- B 的 App 登入後也會廣播；同一 id，不會重複配對。
+
+Log：
+- B：`identity announce id=... name=... control=45871 data=45872`
+- A：`peer <id> IP updated old -> new`、`peer address changed; master stopped for a clean reconnect`
+
+> 這樣 B 換 IP、或 B 先開機停在登入頁，A 都能用 ID 找到它；不需要手動改 IP。
+
 ---
 
 ## 6. 產物
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2.exe   ED8004C8B91CDE751EF28606433146ACE54B1CCAEC4A083341F938BBD5D655DC
+  LAN-KVM-Setup-0.2.exe   C17CEBE3CAB579D585707EABDB46C393BBDFD912F08047ADE7D12A29554A4552
   README.txt
 ```
 

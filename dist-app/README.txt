@@ -69,6 +69,18 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
   sc query LAN-KVM
   服務必須是 RUNNING；必要時以管理員執行 sc start LAN-KVM。
 
+B 先開機 / IP 變更
+------------------
+- B 的 SYSTEM 服務在登入頁就會讀取 App 的持久化 ID，每 3 秒廣播
+  `{"type":"peer","id":...,"name":...,"control_port":45871,"data_port":45872}`。
+- A 的 App 必須已登入並執行；收到同 ID 會自動更新 IP。
+- 若 A 的 master 連在舊 IP，會自動 stop 後用新 IP 重連。
+- log：
+  B: identity announce id=... name=...
+  A: peer ... IP updated old -> new
+     peer address changed; master stopped for a clean reconnect
+- 因此 B 先開機停在登入頁、或 DHCP 換 IP，都不需要手動改設定。
+
 收集測試紀錄
 ------------
 - 測試完在任一台的 UI 右上按「收集紀錄」，或用系統匣右鍵「收集紀錄」。
