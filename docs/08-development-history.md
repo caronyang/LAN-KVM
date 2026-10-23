@@ -104,6 +104,10 @@
    - P0 用 `--role master/client`；沒有自動偵測「哪台有實體滑鼠」。
    - 使用 B 的滑鼠要讓 B 當 master；B 當 client 時，B 的滑鼠只會動 B 自己。
    - 本地取回 / 雙向控制 / 動態 master 尚未實作。
+5. **P0 回切方向**
+   - client 不掛本地 hook，回切是 client 累積 master 送來的 `dx`，達 `-30` 才送 Release。
+   - 因此要**移動 master 的實體滑鼠向左**，不是推 client 的本地滑鼠；或按 `Ctrl+Alt+Shift+Q`。
+   - 2026-10-23 新場域實測再次確認此限制。
 
 ---
 

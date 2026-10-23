@@ -77,6 +77,8 @@ B：
 - B 在左邊界 `(0, 633)` 進入，Y 比例映射正確。
 - `remote motion 94/s` 表示 `ClipCursor` 後 Raw Input 仍持續收到移動，這是 P0 最關鍵的驗證。
 - B 往左邊界推可回切；A 收到 `OFF (edge)`，沒有卡在 remote。
+
+> 註（2026-10-23 新場域實測）：P0 的 client **不捕捉本地輸入**。回切判定是 client 累積 master 送來的 `dx <= -30`，所以實際操作是**把 master 的滑鼠往左推**（或按 `Ctrl+Alt+Shift+Q`）。在 client 機器上推本地滑鼠不會回切；B 本地滑鼠只會停在邊界。這是 P1 local takeover 要解的問題。
 - A 的游標隱藏／釘住與恢復正常（由使用者操作確認）。
 
 ## 4. 已驗證
