@@ -72,9 +72,12 @@ function Show-Info {
 
     Write-Host "Next:"
     Write-Host "  Listener (client machine, Administrator):"
-    Write-Host "    .\net-check.ps1 -Mode listen -Port $Port -AddFirewallRule"
+    Write-Host "    .\run-net-check.cmd -Mode listen -Port $Port -AddFirewallRule"
     Write-Host "  Sender (master machine):"
-    Write-Host "    .\net-check.ps1 -Mode send -Peer <client-ip> -Port $Port"
+    Write-Host "    .\run-net-check.cmd -Mode send -Peer <client-ip> -Port $Port"
+    Write-Host ""
+    Write-Host "If .ps1 is blocked by execution policy, use run-net-check.cmd"
+    Write-Host "or run: Set-ExecutionPolicy -Scope Process Bypass -Force"
 }
 
 function Add-Rule {

@@ -68,6 +68,14 @@ E2815155B40B7AC7B83E08DB214ACAD20C0B0D38BC7D866AF2A6CEC76C552A18  lankvm-service
 
 > 先用 `dist/net-check.ps1` 把「網路」和「LAN-KVM」切開。這個腳本只送 28-byte `LKVM` Hello，聽端原封不動回傳，不需要 Rust、不需要裝 service。
 
+> **PowerShell 執行原則**：若出現「因為這個系統上已停用指令碼執行，所以無法載入…….ps1」，改用：
+>
+> ```powershell
+> Set-ExecutionPolicy -Scope Process Bypass -Force
+> ```
+>
+> 或直接跑 `.\run-net-check.cmd …`（它用 `-ExecutionPolicy Bypass` 啟動，不會改機器設定）。從 ZIP 解壓的檔案若被標記，先 `Get-ChildItem .\*.ps1 | Unblock-File`。
+
 ### 2.1 兩台都看現況
 
 ```powershell
@@ -79,7 +87,12 @@ E2815155B40B7AC7B83E08DB214ACAD20C0B0D38BC7D866AF2A6CEC76C552A18  lankvm-service
 ### 2.2 B（被控端，管理員）開防火牆並監聽
 
 ```powershell
+# 方法 1：直接跑（先在這個視窗允許一次）
+Set-ExecutionPolicy -Scope Process Bypass -Force
 .\net-check.ps1 -Mode listen -Port 45871 -Seconds 120 -AddFirewallRule
+
+# 方法 2：不碰執行原則
+.\run-net-check.cmd -Mode listen -Port 45871 -Seconds 120 -AddFirewallRule
 ```
 
 > `-AddFirewallRule` 會建立 `LAN-KVM P0 UDP 45871`（Inbound/UDP/Any profile）。如果公司政策不允許自行開規則，請 IT 開，不要關防火牆。

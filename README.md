@@ -57,6 +57,8 @@ Winlogon 本機測試：
 .\net-check.ps1 -Mode send -Peer <B_IP> -Port 45871
 ```
 
+> 若 `.ps1` 被執行原則擋住，改用 `.\run-net-check.cmd …`，或先在該視窗跑 `Set-ExecutionPolicy -Scope Process Bypass -Force`。
+
 看到 `RESULT: PASS - 10/10 replies` 再往下。
 
 B：
