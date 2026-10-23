@@ -33,6 +33,7 @@
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); display: inline-block; margin-right: 6px; }
   .dot.on { background: var(--good); box-shadow: 0 0 8px #39d98a88; }
   main { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px 22px 40px; max-width: 1280px; margin: 0 auto; }
+  #globalBanner { max-width: 1280px; margin: 16px auto 0; padding: 0 22px; }
   #globalBanner:empty { display: none; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
@@ -93,6 +94,8 @@
   <button class="small danger" onclick="quitApp()">結束程式</button>
 </header>
 
+<div id="globalBanner"></div>
+
 <main>
   <section style="display:flex;flex-direction:column;gap:16px">
     <div class="card">
@@ -126,8 +129,6 @@
   </section>
 
   <section style="display:flex;flex-direction:column;gap:16px">
-    <div id="globalBanner"></div>
-
     <div class="card">
       <h2>掃描到的電腦</h2>
       <table>

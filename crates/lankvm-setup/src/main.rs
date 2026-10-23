@@ -251,6 +251,42 @@ fn main() {
     firewall_ok &= firewall_rule_tcp("LAN-KVM Logs", 45873);
     setup_log(&format!("firewall_ok={firewall_ok}"));
 
+    // Belt and braces for boot: if SCM does not start the service for any
+    // reason, an ONSTART task as SYSTEM starts it, and SCM recovery restarts
+    // it if it crashes.
+    let _ = run(
+        "sc.exe",
+        &[
+            "failure",
+            "LAN-KVM",
+            "reset=",
+            "86400",
+            "actions=",
+            "restart/5000/restart/15000/restart/60000",
+        ],
+    );
+    let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
+    let sc_path = format!("{system_root}\\System32\\sc.exe");
+    let task_action = format!("\"{sc_path}\" start LAN-KVM");
+    let task_ok = run(
+        "schtasks.exe",
+        &[
+            "/Create",
+            "/TN",
+            "LAN-KVM Boot Start",
+            "/SC",
+            "ONSTART",
+            "/RU",
+            "SYSTEM",
+            "/RL",
+            "HIGHEST",
+            "/TR",
+            &task_action,
+            "/F",
+        ],
+    );
+    setup_log(&format!("boot task -> {task_ok}"));
+
     let target = app_target.display().to_string();
     let run_value = format!("\"{target}\" --silent");
     let _ = run(

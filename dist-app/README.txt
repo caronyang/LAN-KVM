@@ -1,7 +1,7 @@
 LAN-KVM 0.2（測試版）
 =====================
 
-這是一個**單一安裝檔**：LAN-KVM-Setup-0.2-login.exe
+這是一個**單一安裝檔**：LAN-KVM-Setup-0.2-login3.exe
 App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 
 需求
@@ -12,7 +12,7 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝
 ----
 1. 建議先從系統匣右鍵「停止連線」再安裝（避免升級時中斷遠端控制）。
-2. 執行 LAN-KVM-Setup-0.2-login.exe（會跳 UAC，按「是」）。
+2. 執行 LAN-KVM-Setup-0.2-login3.exe（會跳 UAC，按「是」）。
 3. 安裝到 C:\Program Files\LAN-KVM，並自動：
    - 建立防火牆規則：UDP 45870 / 45871 / 45872、TCP 45873（log 回傳）
    - 安裝並啟動 LAN-KVM SYSTEM 服務（登入畫面 / UAC），session agent 不顯示 console

@@ -223,6 +223,11 @@ Log：
   - log：`client health probe failed (n/3)`、`restarting session agent: UDP client not responding`。
 - agent 的 UDP client bind 失敗時**直接退出**，讓服務重拉，不再留下沒有 listener 的半死程序。
 - log：`active session -> N`、`launch_session ... desktop=Default failed ... trying Winlogon`、`launch_session ... OK`、`session agent ... exited code=...`。
+- 安裝程式額外建立：
+  - **ONSTART 排程 `LAN-KVM Boot Start`**（SYSTEM 執行 `sc start LAN-KVM`），避免 SCM 沒自動起服務。
+  - 服務失敗自動重啟（`sc failure ... restart/5000/restart/15000/restart/60000`）。
+  - 安裝記錄 `%TEMP%\lankvm-setup.log` 會寫 `boot task -> true/false`。
+- UI：紅色警告 banner 移到頁面最上方（跨兩欄），不再把右欄卡片往下推。
 
 ---
 
@@ -230,7 +235,7 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2-login.exe   E649C61CA3333EDDAF877E5CC8AF8C064627DA426CA97FCDE1B4A93C43214ACB
+  LAN-KVM-Setup-0.2-login3.exe   1AB6DE4A80BC37B5A97864A8560BA958C0CBF9B74AF8BDBA7E386C24B6A56FA2
   README.txt
 ```
 
