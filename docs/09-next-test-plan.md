@@ -215,6 +215,24 @@ A：
 
 > **回切（2-4）操作重點**：B 的本地鍵鼠**不會**改變狀態。回切是把控制 B 的游標（A 的滑鼠）推回 B 的進入邊界；越界 2px 就送 Release，不再需要多推 30px。若座位左右相反，A 改用 `--edge left`（版面設定，見 `docs/02` 4.5）。
 
+### 4.2.1 可調門檻
+
+| 設定 | 位置 | 預設 | 說明 |
+|------|------|------|------|
+| `--trigger-px` | master CLI | 20 | 邊界外推多少 px 才切到 peer |
+| `--trigger-ms` | master CLI | 300 | 累積外推的時間窗（ms） |
+| `--release-px` | client CLI | 2 | 回切越過進入邊界多少 px |
+| `release_px` | `C:\ProgramData\LAN-KVM\config.txt` | 2 | service client 的回切門檻 |
+
+```powershell
+# A：較靈敏
+.\lankvm-devtools.exe poc --role master --peer <B_IP> --port 45871 `
+  --edge right --trigger-px 12 --trigger-ms 300 --seconds 600
+
+# B：回切 1px
+.\install-service.ps1 -ClientPort 45871 -ReleasePx 1
+```
+
 ### 4.3 記錄
 
 每次測試記下：RTT 平均／最大、`remote motion N/s`、有無 `inject_fail`、解析度／DPI、有線或 Wi-Fi。

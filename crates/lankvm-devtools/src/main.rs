@@ -120,6 +120,9 @@ fn run_poc(mut args: impl Iterator<Item = String>) -> Result<()> {
     let mut port = lankvm_platform::poc::DEFAULT_PORT;
     let mut edge = Edge::Right;
     let mut seconds = 0u64;
+    let mut trigger_px = 20.0f32;
+    let mut trigger_ms = 300u64;
+    let mut release_px = 2i32;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -157,6 +160,24 @@ fn run_poc(mut args: impl Iterator<Item = String>) -> Result<()> {
                     .ok_or_else(|| anyhow!("--seconds needs a value"))?
                     .parse()?;
             }
+            "--trigger-px" => {
+                trigger_px = args
+                    .next()
+                    .ok_or_else(|| anyhow!("--trigger-px needs a value"))?
+                    .parse()?;
+            }
+            "--trigger-ms" => {
+                trigger_ms = args
+                    .next()
+                    .ok_or_else(|| anyhow!("--trigger-ms needs a value"))?
+                    .parse()?;
+            }
+            "--release-px" => {
+                release_px = args
+                    .next()
+                    .ok_or_else(|| anyhow!("--release-px needs a value"))?
+                    .parse()?;
+            }
             other => return Err(anyhow!("unknown argument: {other}")),
         }
     }
@@ -164,9 +185,11 @@ fn run_poc(mut args: impl Iterator<Item = String>) -> Result<()> {
     match role.as_deref() {
         Some("master") => {
             let peer = peer.ok_or_else(|| anyhow!("master requires --peer <client-ip>"))?;
-            lankvm_platform::poc::run_master(&peer, port, edge, seconds)
+            lankvm_platform::poc::run_master(
+                &peer, port, edge, seconds, trigger_px, trigger_ms,
+            )
         }
-        Some("client") => lankvm_platform::poc::run_client(port, seconds),
+        Some("client") => lankvm_platform::poc::run_client(port, seconds, release_px),
         _ => Err(anyhow!("--role must be master or client")),
     }
 }
@@ -511,6 +534,9 @@ poc options:
   --peer <ip>            Client IP (master only)
   --port N               UDP port (default 45871)
   --edge right|left      Master exit edge (default right)
+  --trigger-px N         Master: outward push needed to switch (default 20)
+  --trigger-ms N         Master: push window in ms (default 300)
+  --release-px N         Client: overshoot past entry edge to return (default 2)
   --seconds N            Stop after N seconds (default 0 = until Ctrl+C)
 
 WARNING: this tool is unencrypted, unauthenticated, and logs key events.

@@ -25,10 +25,12 @@ pub mod windows {
         _port: u16,
         _edge: lankvm_core::Edge,
         _seconds: u64,
+        _trigger_px: f32,
+        _trigger_ms: u64,
     ) -> anyhow::Result<()> {
         anyhow::bail!("LAN-KVM P0 is currently Windows-only")
     }
-    pub fn run_client(_port: u16, _seconds: u64) -> anyhow::Result<()> {
+    pub fn run_client(_port: u16, _seconds: u64, _release_px: i32) -> anyhow::Result<()> {
         anyhow::bail!("LAN-KVM P0 is currently Windows-only")
     }
     pub fn run_hook_test(_seconds: u64, _suppress: bool) -> anyhow::Result<()> {

@@ -90,7 +90,14 @@ enum Event {
     },
 }
 
-pub fn run_master(peer: &str, port: u16, edge: Edge, seconds: u64) -> Result<()> {
+pub fn run_master(
+    peer: &str,
+    port: u16,
+    edge: Edge,
+    seconds: u64,
+    trigger_px: f32,
+    trigger_ms: u64,
+) -> Result<()> {
     win::enable_dpi_awareness();
 
     let socket =
@@ -105,7 +112,7 @@ pub fn run_master(peer: &str, port: u16, edge: Edge, seconds: u64) -> Result<()>
     let bounds = win::virtual_bounds()?;
     let _ = BOUNDS.set(bounds);
     let _ = EDGE_KIND.set(edge);
-    let _ = EDGE.set(Mutex::new(EdgeDetector::new(edge, 20.0, 300)));
+    let _ = EDGE.set(Mutex::new(EdgeDetector::new(edge, trigger_px, trigger_ms)));
 
     let (tx, rx) = unbounded();
     EVENT_TX
@@ -194,8 +201,9 @@ pub fn run_master(peer: &str, port: u16, edge: Edge, seconds: u64) -> Result<()>
     Ok(())
 }
 
-pub fn run_client(port: u16, seconds: u64) -> Result<()> {
+pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     win::enable_dpi_awareness();
+    let release_px = release_px.max(1);
 
     let socket = UdpSocket::bind(("0.0.0.0", port))
         .with_context(|| format!("failed to bind UDP port {port}"))?;
@@ -270,8 +278,8 @@ pub fn run_client(port: u16, seconds: u64) -> Result<()> {
                 }
                 win::move_relative(packet.a, packet.b);
                 virtual_x = virtual_x.saturating_add(packet.a);
-                let left_exit = entry_edge == 1 && virtual_x < 0;
-                let right_exit = entry_edge == 2 && virtual_x > 0;
+                let left_exit = entry_edge == 1 && virtual_x < -release_px;
+                let right_exit = entry_edge == 2 && virtual_x > release_px;
                 if left_exit || right_exit {
                     send_release(&socket, addr, &mut seq, 5);
                     controlled = false;
@@ -769,6 +777,15 @@ fn do_release(reason: &'static str) {
     win::release_clip();
     if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) {
         win::set_cursor_visible(true);
+    }
+
+    // A detector that has fired stays fired until reset; without this the
+    // second edge crossing (and every one after it) would be ignored.
+    if let Some(detector) = EDGE.get() {
+        detector
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .reset();
     }
 
     if let (Some(bounds), Some(edge), Ok(cursor)) =

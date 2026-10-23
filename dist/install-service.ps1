@@ -1,5 +1,6 @@
 param(
-    [int]$ClientPort = 0
+    [int]$ClientPort = 0,
+    [int]$ReleasePx = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,8 +20,9 @@ if (-not (Test-Path $exe)) {
 if ($ClientPort -gt 0) {
     $dir = "C:\ProgramData\LAN-KVM"
     New-Item -ItemType Directory -Force $dir | Out-Null
-    Set-Content (Join-Path $dir "config.txt") "client_port=$ClientPort"
-    Write-Host "Wrote client_port=$ClientPort to $dir\config.txt"
+    $lines = @("client_port=$ClientPort", "release_px=$ReleasePx")
+    Set-Content (Join-Path $dir "config.txt") $lines
+    Write-Host "Wrote client_port=$ClientPort release_px=$ReleasePx to $dir\config.txt"
 }
 
 & $exe install

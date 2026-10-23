@@ -17,7 +17,7 @@ use lankvm_net::{Packet, PacketKind};
 use crate::inject::{submit, InjectEvent};
 use crate::logger::log;
 
-pub fn start_client(port: u16, stop: Arc<AtomicBool>) -> Result<()> {
+pub fn start_client(port: u16, stop: Arc<AtomicBool>, release_px: i32) -> Result<()> {
     let socket =
         UdpSocket::bind(("0.0.0.0", port)).with_context(|| format!("bind UDP port {port}"))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -27,11 +27,12 @@ pub fn start_client(port: u16, stop: Arc<AtomicBool>) -> Result<()> {
         format!("P0 UDP client listening on 0.0.0.0:{port} (unencrypted; test only)"),
     );
 
-    thread::spawn(move || client_loop(socket, stop));
+    thread::spawn(move || client_loop(socket, stop, release_px));
     Ok(())
 }
 
-fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
+fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
+    let release_px = release_px.max(1);
     let mut buf = [0u8; 64];
     let mut seq = 0u32;
     let mut last_hello = false;
@@ -83,8 +84,8 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
                 virtual_x = virtual_x.saturating_add(packet.a);
                 // The cursor has reached the edge it entered from and is now
                 // being pushed outward: give control back to the master.
-                let exit = (entry_edge == 1 && virtual_x < -2)
-                    || (entry_edge == 2 && virtual_x > 2);
+                let exit = (entry_edge == 1 && virtual_x < -release_px)
+                    || (entry_edge == 2 && virtual_x > release_px);
                 if exit {
                     let mut release = Packet::new(PacketKind::Release, seq);
                     seq = seq.wrapping_add(1);

@@ -5,6 +5,9 @@ use std::path::PathBuf;
 pub struct Config {
     /// If set, the session agent listens for the P0 UDP client protocol.
     pub client_port: Option<u16>,
+    /// How far past the entry edge the cursor must be pushed before the
+    /// client returns control to the master (pixels). Default 2.
+    pub release_px: Option<i32>,
 }
 
 pub fn config_path() -> PathBuf {
@@ -26,6 +29,9 @@ pub fn load() -> Config {
         };
         if key.trim().eq_ignore_ascii_case("client_port") {
             config.client_port = value.trim().parse().ok();
+        }
+        if key.trim().eq_ignore_ascii_case("release_px") {
+            config.release_px = value.trim().parse().ok();
         }
     }
     config
