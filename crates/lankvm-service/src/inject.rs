@@ -55,6 +55,9 @@ pub fn clear_sender() {
 }
 
 pub fn submit(event: InjectEvent) {
+    if crate::remote_inject::send(&event) {
+        return;
+    }
     if let Ok(slot) = sender_slot().lock() {
         if let Some(sender) = slot.as_ref() {
             let _ = sender.send(event);

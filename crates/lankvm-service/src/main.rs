@@ -17,9 +17,13 @@ mod logger;
 #[cfg(windows)]
 mod net;
 #[cfg(windows)]
+mod remote_inject;
+#[cfg(windows)]
 mod service;
 #[cfg(windows)]
 mod session;
+#[cfg(windows)]
+mod winjector;
 #[cfg(windows)]
 mod worker;
 
@@ -33,6 +37,17 @@ fn main() -> std::process::ExitCode {
         match args.next().as_deref() {
             Some("run") => service::run_dispatcher(),
             Some("session") => session::run(args),
+            Some("winjector") => {
+                let mut port = remote_inject::PORT;
+                while let Some(arg) = args.next() {
+                    if arg == "--port" {
+                        if let Some(value) = args.next() {
+                            port = value.parse().unwrap_or(port);
+                        }
+                    }
+                }
+                winjector::run(port)
+            }
             Some("install") => service::install(),
             Some("uninstall") => service::uninstall(),
             Some("start") => service::start(),

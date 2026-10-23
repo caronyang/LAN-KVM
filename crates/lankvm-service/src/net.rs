@@ -5,7 +5,7 @@
 //! (including Winlogon). Production will use QUIC/TLS + pairing.
 
 use std::io;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -43,7 +43,6 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
     let mut virtual_x = 0i32;
     let mut bounds = None;
     let mut last_desktop_gen = desktop::generation();
-    let mut master_addr: Option<SocketAddr> = None;
 
     while !stop.load(Ordering::SeqCst) {
         // The input desktop changed (lock/unlock/UAC). The cursor on the new
@@ -56,27 +55,9 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
             log("session", "desktop changed -> edge accumulator reset");
         }
 
-        // Safety net: if SendInput keeps failing (for example the secure
-        // desktop rejected it), give control back to the master instead of
-        // leaving both machines frozen in remote mode.
-        if controlled && inject::fail_streak() >= 3 {
-            let streak = inject::fail_streak();
-            if let Some(addr) = master_addr {
-                let mut release = Packet::new(PacketKind::Release, seq);
-                seq = seq.wrapping_add(1);
-                release.a = 7; // inject_fail
-                let _ = socket.send_to(&release.encode(), addr);
-            }
-            controlled = false;
-            inject::clear_fail_streak();
-            submit(InjectEvent::Release);
-            log(
-                "session",
-                format!(
-                    "injection failed streak={streak} -> released control to master (safety net)"
-                ),
-            );
-        }
+        // Do not auto-release on injection failure here: it makes the lock
+        // screen impossible to test. The master can always use
+        // Ctrl+Alt+Shift+Q, and the helper process below is the real fix.
 
         let (n, addr) = match socket.recv_from(&mut buf) {
             Ok(value) => value,
@@ -97,7 +78,6 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         let Some(packet) = Packet::decode(&buf[..n]) else {
             continue;
         };
-        master_addr = Some(addr);
 
         match packet.kind {
             PacketKind::Hello => {

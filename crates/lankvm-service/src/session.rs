@@ -1,13 +1,30 @@
+use std::ffi::OsStr;
+use std::io;
+use std::mem::size_of;
+use std::net::TcpStream;
+use std::os::windows::ffi::OsStrExt;
+use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
+
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_TIMEOUT};
+use windows_sys::Win32::Security::{
+    DuplicateTokenEx, TokenPrimary, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_QUERY,
+};
+use windows_sys::Win32::System::SystemServices::MAXIMUM_ALLOWED;
+use windows_sys::Win32::System::Threading::{
+    CreateProcessAsUserW, GetCurrentProcess, OpenProcessToken, TerminateProcess,
+    WaitForSingleObject, PROCESS_INFORMATION, STARTUPINFOW,
+};
 
 use crate::desktop;
 use crate::logger::{log, log_path};
-use crate::net;use crate::worker::{take_counts, DesktopWorker};
+use crate::net;
+use crate::remote_inject;use crate::worker::{take_counts, DesktopWorker};
 
 pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     let mut seconds = 0u64;
@@ -82,6 +99,9 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     let mut worker_desktop = String::new();
     let mut next_worker_attempt = Instant::now();
     let mut last_count_log = Instant::now();
+    let mut winjector: Option<Winjector> = None;
+    let mut winjector_retry = Instant::now();
+    let mut winjector_connect_retry = Instant::now();
 
     loop {
         if seconds > 0 && started.elapsed() >= Duration::from_secs(seconds) {
@@ -129,6 +149,59 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
                         }
                     }
                 }
+
+                if client {
+                    if name.eq_ignore_ascii_case("Winlogon") {
+                        let alive = winjector.as_ref().map(|w| w.is_alive()).unwrap_or(false);
+                        if !alive && Instant::now() >= winjector_retry {
+                            if let Some(mut old) = winjector.take() {
+                                old.stop();
+                            }
+                            match start_winjector() {
+                                Ok(started) => {
+                                    log(
+                                        "session",
+                                        format!("winjector started pid={}", started.pid),
+                                    );
+                                    winjector = Some(started);
+                                }
+                                Err(err) => {
+                                    log("session", format!("winjector start failed: {err:#}"));
+                                    winjector_retry = Instant::now() + Duration::from_secs(2);
+                                }
+                            }
+                        }
+                        if !remote_inject::is_active()
+                            && Instant::now() >= winjector_connect_retry
+                        {
+                            match connect_winjector() {
+                                Ok(stream) => {
+                                    remote_inject::set(stream);
+                                    log(
+                                        "session",
+                                        "winjector connected; routing input to Winlogon helper",
+                                    );
+                                }
+                                Err(err) => {
+                                    log("session", format!("winjector connect failed: {err:#}"));
+                                    winjector_connect_retry =
+                                        Instant::now() + Duration::from_secs(2);
+                                }
+                            }
+                        }
+                    } else {
+                        if remote_inject::is_active() {
+                            remote_inject::clear();
+                            log("session", "winjector disconnected (left Winlogon)");
+                        }
+                        if let Some(mut old) = winjector.take() {
+                            old.stop();
+                            log("session", "winjector stopped");
+                        }
+                        winjector_retry = Instant::now();
+                        winjector_connect_retry = Instant::now();
+                    }
+                }
             }
             Err(err) => {
                 let message = err.to_string();
@@ -158,9 +231,148 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     }
 
     stop.store(true, Ordering::SeqCst);
+    remote_inject::clear();
+    if let Some(mut old) = winjector.take() {
+        old.stop();
+    }
     if let Some(old) = worker.take() {
         old.stop();
     }
     log("session", "session agent stopped");
     Ok(())
+}
+
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+struct Winjector {
+    process: HANDLE,
+    pid: u32,
+}
+
+impl Winjector {
+    fn is_alive(&self) -> bool {
+        if self.process.is_null() {
+            return false;
+        }
+        unsafe { WaitForSingleObject(self.process, 0) == WAIT_TIMEOUT }
+    }
+
+    fn stop(&mut self) {
+        if self.process.is_null() {
+            return;
+        }
+        unsafe {
+            TerminateProcess(self.process, 1);
+            WaitForSingleObject(self.process, 2_000);
+            CloseHandle(self.process);
+        }
+        self.process = null_mut();
+    }
+}
+
+impl Drop for Winjector {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+fn start_winjector() -> Result<Winjector> {
+    let exe = std::env::current_exe()?;
+    let exe_wide = to_wide(exe.as_os_str());
+    let command = format!(
+        "\"{}\" winjector --port {}",
+        exe.display(),
+        remote_inject::PORT
+    );
+    let mut command_wide = to_wide(&command);
+    let mut desktop_wide = to_wide("winsta0\\Winlogon");
+
+    let mut token: HANDLE = null_mut();
+    if unsafe {
+        OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY,
+            &mut token,
+        )
+    } == 0
+    {
+        bail!(
+            "OpenProcessToken failed: {}",
+            io::Error::last_os_error()
+        );
+    }
+
+    let mut primary: HANDLE = null_mut();
+    let duplicated = unsafe {
+        DuplicateTokenEx(
+            token,
+            MAXIMUM_ALLOWED,
+            null(),
+            2, // SecurityImpersonation
+            TokenPrimary,
+            &mut primary,
+        )
+    };
+    unsafe { CloseHandle(token) };
+    if duplicated == 0 {
+        bail!("DuplicateTokenEx failed: {}", io::Error::last_os_error());
+    }
+
+    let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
+    startup.cb = size_of::<STARTUPINFOW>() as u32;
+    startup.lpDesktop = desktop_wide.as_mut_ptr();
+
+    let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+    let created = unsafe {
+        CreateProcessAsUserW(
+            primary,
+            exe_wide.as_ptr(),
+            command_wide.as_mut_ptr(),
+            null(),
+            null(),
+            0,
+            CREATE_NO_WINDOW,
+            null(),
+            null(),
+            &startup,
+            &mut process,
+        )
+    };
+    unsafe { CloseHandle(primary) };
+
+    if created == 0 {
+        bail!(
+            "CreateProcessAsUserW(winjector, winsta0\\Winlogon) failed: {}",
+            io::Error::last_os_error()
+        );
+    }
+    unsafe { CloseHandle(process.hThread) };
+
+    Ok(Winjector {
+        process: process.hProcess,
+        pid: process.dwProcessId,
+    })
+}
+
+fn connect_winjector() -> Result<TcpStream> {
+    let mut last = String::new();
+    for _ in 0..20 {
+        match TcpStream::connect(("127.0.0.1", remote_inject::PORT)) {
+            Ok(stream) => {
+                let _ = stream.set_nodelay(true);
+                return Ok(stream);
+            }
+            Err(err) => {
+                last = err.to_string();
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
+    bail!("connect 127.0.0.1:{} failed: {last}", remote_inject::PORT)
+}
+
+fn to_wide(value: impl AsRef<OsStr>) -> Vec<u16> {
+    let mut wide: Vec<u16> = value.as_ref().encode_wide().collect();
+    wide.push(0);
+    wide
 }

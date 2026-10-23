@@ -169,14 +169,23 @@ Winlogon: input counts ... injected=183 inject_fail=183
 
 Default 桌面 `inject_fail=0`；只有點擊密碼欄位、切到 Winlogon secure desktop 後全部失敗。A 的 master 仍停在 remote，游標被釘住、鍵盤被攔，所以兩台都不能操作。
 
-根因：injector 是獨立 thread，停在 process 的 Default 桌面；hook worker 有 attach 到 Winlogon，injector 沒有，secure desktop 的 `SendInput` 全部被拒。
+第二輪驗證（thread attach）：
 
-修正：
-- Winlogon 時 injector thread 也 `SetThreadDesktop` 到同一個桌面（Default 路徑不動）。
-- 連續 3 次注入失敗時送 Release，A 立刻解除 ClipCursor／恢復鍵鼠（安全網）。
-- log 增加 `injector desktop attach=... err=...`、`inject failed kind=... streak=... err=...`、master 的 epoch 時間戳。
+```
+Winlogon: injector desktop attach=true err=0
+TokenUIAccess=true err=0
+Winlogon: inject failed kind=Motion streak=1 err=存取被拒 (os error 5)
+```
 
-> 待實機驗證：鎖定後點密碼欄位，`inject_fail` 應保持 0、`attach=true`。若 attach=false 或 err=5，代表需要 UIAccess/簽章，log 會直接顯示。
+結論：**把 injector thread attach 到 Winlogon、UIAccess=true 都還不夠**；`SendInput` 在 secure desktop 仍被拒。自動 Release 會讓登入畫面完全無法測試，已移除。
+
+目前修正（helper process）：
+- 在 Winlogon 時，另外建立 `lankvm-service.exe winjector --port 45874`，以 `lpDesktop = winsta0\Winlogon` 啟動，**process 一开始就在 secure desktop**。
+- 輸入事件由本機 TCP 45874 轉給 helper，由 helper 的 main thread 執行 `SendInput`。
+- 只在 Winlogon 使用；Default 仍走原本的 injector（正常）。
+- helper 的 log：`winjector: listening`、`winjector: agent connected`、`winjector: SendInput failed kind=... err=...`。
+
+> 待實機驗證：鎖定後點密碼欄位，`inject_fail` 應保持 0，且 `session.log` 出現 `winjector connected`。若 helper 仍 err=5，代表 secure desktop 還需要簽章/UIAccess 的正式憑證，log 會直接顯示。
 
 ---
 
@@ -184,7 +193,7 @@ Default 桌面 `inject_fail=0`；只有點擊密碼欄位、切到 Winlogon secu
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2.exe   B328D2D3947FA0C4B4046EAD314AC3826DB1B3ABA8AE717FF4700E96ED178BC4
+  LAN-KVM-Setup-0.2.exe   30093F2E48ABC5A09334EC20C5B96D16639304F69FB78A902473B41FC7698506
   README.txt
 ```
 
