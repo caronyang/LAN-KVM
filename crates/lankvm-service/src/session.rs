@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 
+use crate::desktop;
 use crate::logger::{log, log_path};
-use crate::net;
-use crate::worker::{take_counts, DesktopWorker};
+use crate::net;use crate::worker::{take_counts, DesktopWorker};
 
 pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     let mut seconds = 0u64;
@@ -92,6 +92,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
             Ok(name) => {
                 if name != last_desktop {
                     log("session", format!("input desktop -> {name}"));
+                    desktop::bump();
                     last_desktop = name.clone();
                     last_error.clear();
                 }

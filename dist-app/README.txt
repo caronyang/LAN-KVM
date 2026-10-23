@@ -54,6 +54,14 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 --------------
 - B 的 client 注入由 SYSTEM 服務執行，所以 B 按 Win+L 或跳 UAC 時，
   仍然可以用 A 的鍵鼠操作。
+- 這一版特別修正「鎖定畫面點密碼欄位後卡住」：Winlogon 時 injector 會
+  attach 到安全桌面（log 會出現 `injector desktop attach=true`）。
+- **第一次測試請在 B 暫時接一個鍵盤**，若仍有問題才能解鎖/重開；確認
+  `inject_fail=0` 後就可以移除。
+- 相關 log：
+  Winlogon: injector desktop attach=true/false err=...
+  Winlogon: inject failed kind=... streak=... err=...
+  injection failed streak=N -> released control to master (safety net)
 - 若 UI 或系統匣顯示「client 服務未就緒」，請確認：
   sc query LAN-KVM
   服務必須是 RUNNING；必要時以管理員執行 sc start LAN-KVM。

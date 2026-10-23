@@ -247,16 +247,25 @@ fn winlogon_token(session_id: u32) -> Result<HANDLE> {
     }
 
     // UIAccess may fail on an unsigned binary; SYSTEM integrity is still
-    // sufficient for the secure desktop in the P0 path. Log via the caller.
+    // sufficient for the secure desktop in the P0 path. Log it so a failed
+    // password-field injection can be diagnosed from the service log.
     let mut ui_access: u32 = 1;
-    unsafe {
+    let ui_access_result = unsafe {
         SetTokenInformation(
             primary,
             TokenUIAccess,
             &mut ui_access as *mut u32 as *mut c_void,
             size_of::<u32>() as u32,
-        );
-    }
+        )
+    };
+    crate::logger::log(
+        "service",
+        format!(
+            "TokenUIAccess={} err={}",
+            ui_access_result != 0,
+            io::Error::last_os_error()
+        ),
+    );
 
     Ok(primary)
 }

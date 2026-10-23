@@ -5,7 +5,7 @@
 //! (including Winlogon). Production will use QUIC/TLS + pairing.
 
 use std::io;
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -14,8 +14,10 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use lankvm_net::{Packet, PacketKind};
 
-use crate::inject::{submit, InjectEvent};
+use crate::desktop;
+use crate::inject::{self, submit, InjectEvent};
 use crate::logger::log;
+use lankvm_platform::windows as win;
 
 pub fn start_client(port: u16, stop: Arc<AtomicBool>, release_px: i32) -> Result<()> {
     let socket =
@@ -39,8 +41,43 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
     let mut controlled = false;
     let mut entry_edge = 1i32;
     let mut virtual_x = 0i32;
+    let mut bounds = None;
+    let mut last_desktop_gen = desktop::generation();
+    let mut master_addr: Option<SocketAddr> = None;
 
     while !stop.load(Ordering::SeqCst) {
+        // The input desktop changed (lock/unlock/UAC). The cursor on the new
+        // desktop is unrelated to the previous entry point, so drop the stale
+        // accumulator instead of releasing in the middle of the screen.
+        let gen = desktop::generation();
+        if gen != last_desktop_gen {
+            last_desktop_gen = gen;
+            virtual_x = 0;
+            log("session", "desktop changed -> edge accumulator reset");
+        }
+
+        // Safety net: if SendInput keeps failing (for example the secure
+        // desktop rejected it), give control back to the master instead of
+        // leaving both machines frozen in remote mode.
+        if controlled && inject::fail_streak() >= 3 {
+            let streak = inject::fail_streak();
+            if let Some(addr) = master_addr {
+                let mut release = Packet::new(PacketKind::Release, seq);
+                seq = seq.wrapping_add(1);
+                release.a = 7; // inject_fail
+                let _ = socket.send_to(&release.encode(), addr);
+            }
+            controlled = false;
+            inject::clear_fail_streak();
+            submit(InjectEvent::Release);
+            log(
+                "session",
+                format!(
+                    "injection failed streak={streak} -> released control to master (safety net)"
+                ),
+            );
+        }
+
         let (n, addr) = match socket.recv_from(&mut buf) {
             Ok(value) => value,
             Err(err)
@@ -60,6 +97,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         let Some(packet) = Packet::decode(&buf[..n]) else {
             continue;
         };
+        master_addr = Some(addr);
 
         match packet.kind {
             PacketKind::Hello => {
@@ -72,6 +110,11 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                 entry_edge = packet.b.clamp(1, 2);
                 virtual_x = 0;
                 controlled = true;
+                bounds = win::virtual_bounds().ok();
+                log(
+                    "session",
+                    format!("switch: controlled=true entry_edge={entry_edge} bounds={bounds:?}"),
+                );
                 submit(InjectEvent::Switch {
                     ratio: packet.a.clamp(0, 65_535) as u16,
                     entry_edge,
@@ -82,18 +125,45 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                     continue;
                 }
                 virtual_x = virtual_x.saturating_add(packet.a);
-                // The cursor has reached the edge it entered from and is now
-                // being pushed outward: give control back to the master.
-                let exit = (entry_edge == 1 && virtual_x < -release_px)
-                    || (entry_edge == 2 && virtual_x > release_px);
-                if exit {
+                // Hand back only when the real cursor is at the entry edge and
+                // is being pushed further outward. The old dx-only check
+                // released in the middle of the screen after a desktop switch.
+                let outward = if entry_edge == 1 {
+                    packet.a < 0
+                } else {
+                    packet.a > 0
+                };
+                let at_edge = match bounds.as_ref() {
+                    Some(bounds) => win::cursor_pos()
+                        .ok()
+                        .map(|cursor| {
+                            if entry_edge == 1 {
+                                cursor.x <= bounds.left
+                            } else {
+                                cursor.x >= bounds.right - 1
+                            }
+                        })
+                        .unwrap_or(false),
+                    None => false,
+                };
+                let past = if entry_edge == 1 {
+                    virtual_x < -release_px
+                } else {
+                    virtual_x > release_px
+                };
+                if outward && at_edge && past {
                     let mut release = Packet::new(PacketKind::Release, seq);
                     seq = seq.wrapping_add(1);
                     release.a = 5; // edge
                     let _ = socket.send_to(&release.encode(), addr);
                     controlled = false;
                     submit(InjectEvent::Release);
-                    log("session", "cursor reached entry edge -> released to master");
+                    log(
+                        "session",
+                        format!(
+                            "cursor at entry edge -> release (virtual_x={virtual_x}, edge={entry_edge})"
+                        ),
+                    );
                     continue;
                 }
                 submit(InjectEvent::Motion {
@@ -128,7 +198,9 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
             }
             PacketKind::Release => {
                 controlled = false;
+                inject::clear_fail_streak();
                 submit(InjectEvent::Release);
+                log("session", "release received from master");
             }
             PacketKind::Ping => {
                 let mut pong = Packet::new(PacketKind::Pong, seq);

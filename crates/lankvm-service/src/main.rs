@@ -7,6 +7,8 @@ fn main() {
 #[cfg(windows)]
 mod config;
 #[cfg(windows)]
+mod desktop;
+#[cfg(windows)]
 mod inject;
 #[cfg(windows)]
 mod launcher;

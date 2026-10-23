@@ -5,6 +5,7 @@
 //! deliberately records only counts, never key codes or clipboard data.
 
 use std::collections::HashSet;
+use std::ffi::c_void;
 use std::io;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -124,7 +125,10 @@ fn worker_main(desktop: &str, install_hooks: bool, ready: mpsc::Sender<Result<u3
     }
 
     let (inject_tx, inject_rx) = mpsc::channel();
-    let injector = thread::spawn(move || injector_main(inject_rx));
+    let inject_desktop = desktop.to_string();
+    let inject_handle = desktop_handle as isize;
+    let injector =
+        thread::spawn(move || injector_main(inject_rx, inject_desktop, inject_handle));
     inject::set_sender(inject_tx);
 
     let thread_id = unsafe { GetCurrentThreadId() };
@@ -177,19 +181,44 @@ fn worker_main(desktop: &str, install_hooks: bool, ready: mpsc::Sender<Result<u3
     );
 }
 
-fn injector_main(rx: Receiver<InjectEvent>) {
+fn injector_main(rx: Receiver<InjectEvent>, desktop: String, desktop_handle: isize) {
+    // The hook worker is attached to the active desktop, but a new thread
+    // otherwise starts on the process desktop (Default). On the secure
+    // Winlogon desktop that makes SendInput fail for every event, so attach
+    // the injector to the same desktop before applying input. Keep the
+    // working Default path untouched.
+    if !desktop.eq_ignore_ascii_case("Default") {
+        let attached = unsafe { SetThreadDesktop(desktop_handle as *mut c_void) } != 0;
+        let error = if attached {
+            0
+        } else {
+            io::Error::last_os_error().raw_os_error().unwrap_or(-1)
+        };
+        log(
+            "session",
+            format!("{desktop}: injector desktop attach={attached} err={error}"),
+        );
+    } else {
+        log("session", "Default: injector stays on default desktop");
+    }
+
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
     while let Ok(event) = rx.recv() {
-        apply(event, &mut pressed);
+        apply(&desktop, event, &mut pressed);
     }
     release_keys(&mut pressed);
 }
 
-fn apply(event: InjectEvent, pressed: &mut HashSet<(u16, bool)>) {
+fn apply(desktop: &str, event: InjectEvent, pressed: &mut HashSet<(u16, bool)>) {
     INJECT_COUNT.fetch_add(1, Ordering::Relaxed);
     match event {
         InjectEvent::Switch { ratio, entry_edge } => {
             release_keys(pressed);
+            inject::clear_fail_streak();
+            log(
+                "session",
+                format!("{desktop}: inject Switch entry_edge={entry_edge}"),
+            );
             if let Ok(bounds) = win::virtual_bounds() {
                 let ratio = ratio as f32 / 65_535.0;
                 let y = bounds.top + (ratio * (bounds.height().max(2) - 1) as f32).round() as i32;
@@ -202,19 +231,30 @@ fn apply(event: InjectEvent, pressed: &mut HashSet<(u16, bool)>) {
             }
         }
         InjectEvent::Motion { dx, dy } => {
-            if !win::move_relative(dx, dy) {
+            let ok = win::move_relative(dx, dy);
+            inject::note_result(ok);
+            if !ok {
                 INJECT_FAIL.fetch_add(1, Ordering::Relaxed);
+                log_inject_failure(desktop, "Motion");
             }
         }
         InjectEvent::Button { button, down } => {
-            let _ = win::mouse_button(button, down);
+            let ok = win::mouse_button(button, down);
+            inject::note_result(ok);
+            if !ok {
+                log_inject_failure(desktop, "Button");
+            }
         }
         InjectEvent::Key {
             scan,
             down,
             extended,
         } => {
-            let _ = win::key_scancode(scan, down, extended);
+            let ok = win::key_scancode(scan, down, extended);
+            inject::note_result(ok);
+            if !ok {
+                log_inject_failure(desktop, "Key");
+            }
             if down {
                 pressed.insert((scan, extended));
             } else {
@@ -222,9 +262,30 @@ fn apply(event: InjectEvent, pressed: &mut HashSet<(u16, bool)>) {
             }
         }
         InjectEvent::Wheel { delta, horizontal } => {
-            let _ = win::wheel(delta, horizontal);
+            let ok = win::wheel(delta, horizontal);
+            inject::note_result(ok);
+            if !ok {
+                log_inject_failure(desktop, "Wheel");
+            }
         }
-        InjectEvent::Release => release_keys(pressed),
+        InjectEvent::Release => {
+            inject::clear_fail_streak();
+            log("session", format!("{desktop}: inject Release"));
+            release_keys(pressed);
+        }
+    }
+}
+
+fn log_inject_failure(desktop: &str, kind: &str) {
+    let streak = inject::fail_streak();
+    if streak == 1 || streak % 25 == 0 {
+        log(
+            "session",
+            format!(
+                "{desktop}: inject failed kind={kind} streak={streak} err={}",
+                io::Error::last_os_error()
+            ),
+        );
     }
 }
 

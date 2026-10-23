@@ -12,7 +12,7 @@ use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -42,9 +42,21 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::windows as win;
 
-pub const DEFAULT_PORT: u16 = 45_871;
-const WM_LANKVM_RELEASE: u32 = WM_APP + 1;
+pub const DEFAULT_PORT: u16 = 45_871;const WM_LANKVM_RELEASE: u32 = WM_APP + 1;
 const WM_LANKVM_STOP: u32 = WM_APP + 2;
+
+fn epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+macro_rules! plog {
+    ($($arg:tt)*) => {
+        println!("[{}] {}", epoch_secs(), format_args!($($arg)*))
+    };
+}
 
 static EVENT_TX: OnceLock<Sender<Event>> = OnceLock::new();
 static REMOTE: AtomicBool = AtomicBool::new(false);
@@ -284,7 +296,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 win::warp_cursor(x, y);
                 controlled = true;
                 virtual_x = 0;
-                println!(
+                plog!(
                     "[client] controlled; entry at ({x}, {y}) from {}",
                     if entry_edge == 2 { "right" } else { "left" }
                 );
@@ -301,7 +313,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                     send_release(&socket, addr, &mut seq, 5);
                     controlled = false;
                     release_keys(&mut pressed);
-                    println!("[client] released at edge");
+                    plog!("[client] released at edge");
                 }
             }
             PacketKind::Button => {
@@ -331,7 +343,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 if controlled {
                     controlled = false;
                     release_keys(&mut pressed);
-                    println!("[client] released by master");
+                    plog!("[client] released by master");
                 }
             }
             PacketKind::Ping => {
@@ -435,9 +447,9 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
                         let now = now_ms();
                         let rtt = now.saturating_sub(sent);
                         if LAST_PONG_MS.swap(now, Ordering::SeqCst) == 0 {
-                            println!("[master] client online");
+                            plog!("[master] client online");
                         }
-                        println!("[latency] rtt={rtt} ms");
+                        plog!("[latency] rtt={rtt} ms");
                     }
                     PacketKind::Release => {
                         post_release(reason_name(packet.a.max(0) as u32));
@@ -477,7 +489,7 @@ fn heartbeat_loop(stop: Arc<AtomicBool>) {
         });
         if REMOTE.load(Ordering::SeqCst) {
             let motion = REMOTE_MOTION.swap(0, Ordering::SeqCst);
-            println!("[master] remote motion {motion}/s");
+            plog!("[master] remote motion {motion}/s");
             let last = LAST_PONG_MS.load(Ordering::SeqCst);
             if last != 0 && now_ms().saturating_sub(last) > 3_000 {
                 post_release("timeout");
@@ -742,7 +754,7 @@ fn do_switch(cursor: Point, bounds: Rect) {
     // This avoids a black-hole state when the IP, firewall, or client is wrong.
     let last_pong = LAST_PONG_MS.load(Ordering::SeqCst);
     if last_pong == 0 || now_ms().saturating_sub(last_pong) > 3_000 {
-        println!("[master] client not reachable (no recent PONG); staying local");
+        plog!("[master] client not reachable (no recent PONG); staying local");
         if let Some(detector) = EDGE.get() {
             detector.lock().unwrap_or_else(|e| e.into_inner()).reset();
         }
@@ -780,9 +792,10 @@ fn do_switch(cursor: Point, bounds: Rect) {
     LAST_PONG_MS.store(now_ms(), Ordering::SeqCst);
     send_event(Event::Switch { ratio, entry_edge });
 
-    println!(
+    plog!(
         "[master] remote control ON ({:?} edge, entry ratio {})",
-        edge, ratio
+        edge,
+        ratio
     );
 }
 
@@ -815,7 +828,7 @@ fn do_release(reason: &'static str) {
         };
         win::warp_cursor(x, cursor.y);
     }
-    println!("[master] remote control OFF ({reason})");
+    plog!("[master] remote control OFF ({reason})");
 }
 
 fn send_event(event: Event) {
@@ -865,6 +878,8 @@ fn reason_code(reason: &str) -> i32 {
         "timeout" => 3,
         "stop" => 4,
         "edge" => 5,
+        "local" => 6,
+        "inject_fail" => 7,
         _ => 0,
     }
 }
@@ -876,6 +891,8 @@ fn reason_name(code: u32) -> &'static str {
         3 => "timeout",
         4 => "stop",
         5 => "edge",
+        6 => "local",
+        7 => "inject_fail",
         _ => "peer",
     }
 }

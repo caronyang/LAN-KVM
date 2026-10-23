@@ -5,8 +5,11 @@
 //! the hook thread itself is rejected by Windows in this setup, so the hook
 //! worker forwards events to this injector thread.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Mutex, OnceLock};
+
+static FAIL_STREAK: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, Copy)]
 pub enum InjectEvent {
@@ -57,4 +60,20 @@ pub fn submit(event: InjectEvent) {
             let _ = sender.send(event);
         }
     }
+}
+
+pub fn note_result(ok: bool) {
+    if ok {
+        FAIL_STREAK.store(0, Ordering::Relaxed);
+    } else {
+        FAIL_STREAK.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+pub fn fail_streak() -> u32 {
+    FAIL_STREAK.load(Ordering::Relaxed)
+}
+
+pub fn clear_fail_streak() {
+    FAIL_STREAK.store(0, Ordering::Relaxed);
 }

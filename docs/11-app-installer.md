@@ -157,13 +157,34 @@ LAN-KVM-logs-<電腦名>-<時間>
 
 > 單機只驗證「探索／配對／自動連線／停止」流程；實際滑鼠跨邊界仍需兩台實機。
 
+### 5.1 Winlogon 密碼欄位卡死（2026-10-23 實機）
+
+證據（B 的 `session.log`）：
+
+```
+input desktop -> Winlogon
+Winlogon: injector active
+Winlogon: input counts ... injected=183 inject_fail=183
+```
+
+Default 桌面 `inject_fail=0`；只有點擊密碼欄位、切到 Winlogon secure desktop 後全部失敗。A 的 master 仍停在 remote，游標被釘住、鍵盤被攔，所以兩台都不能操作。
+
+根因：injector 是獨立 thread，停在 process 的 Default 桌面；hook worker 有 attach 到 Winlogon，injector 沒有，secure desktop 的 `SendInput` 全部被拒。
+
+修正：
+- Winlogon 時 injector thread 也 `SetThreadDesktop` 到同一個桌面（Default 路徑不動）。
+- 連續 3 次注入失敗時送 Release，A 立刻解除 ClipCursor／恢復鍵鼠（安全網）。
+- log 增加 `injector desktop attach=... err=...`、`inject failed kind=... streak=... err=...`、master 的 epoch 時間戳。
+
+> 待實機驗證：鎖定後點密碼欄位，`inject_fail` 應保持 0、`attach=true`。若 attach=false 或 err=5，代表需要 UIAccess/簽章，log 會直接顯示。
+
 ---
 
 ## 6. 產物
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2.exe   5E3AD323EF178F690ABB9FF391A5C22BDE651A5A7F728E59023960B3E4F5652A
+  LAN-KVM-Setup-0.2.exe   B328D2D3947FA0C4B4046EAD314AC3826DB1B3ABA8AE717FF4700E96ED178BC4
   README.txt
 ```
 
