@@ -116,6 +116,8 @@ fn enable_privilege(name: &str) -> bool {
     adjusted != 0
 }
 
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 pub fn launch_session(session_id: u32) -> Result<Child> {
     let token = winlogon_token(session_id)?;
 
@@ -143,7 +145,7 @@ pub fn launch_session(session_id: u32) -> Result<Child> {
             null(),
             null(),
             0,
-            0,
+            CREATE_NO_WINDOW,
             null(),
             null(),
             &startup,

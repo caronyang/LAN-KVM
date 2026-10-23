@@ -129,7 +129,7 @@ fn service_running(app: &Arc<App>) -> bool {
     let mut buf = [0u8; 64];
     match socket.recv_from(&mut buf) {
         Ok((n, _)) => lankvm_net::Packet::decode(&buf[..n])
-            .map(|p| p.kind == lankvm_net::PacketKind::Pong)
+            .map(|p| p.kind == lankvm_net::PacketKind::Pong && p.d == 1)
             .unwrap_or(false),
         Err(_) => false,
     }
@@ -144,6 +144,27 @@ fn start_service_watch(app: Arc<App>) {
                 "client engine {}",
                 if running { "ready (SYSTEM service)" } else { "not ready" }
             ));
+            if running {
+                // A restarted client engine means the master's remote state is
+                // stale. Ask it to stop and reconnect so the cursor is not
+                // stuck clipped on the master.
+                let has_session = app
+                    .session
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_some();
+                if has_session {
+                    let config = app
+                        .config
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
+                    if let Some(peer) = config.paired.iter().find(|p| p.role == "client") {
+                        let msg = base(&app, "session_reset");
+                        send_to(&app, &msg, parse_or(&peer.ip), peer.control_port);
+                    }
+                }
+            }
         }
         thread::sleep(Duration::from_secs(5));
     });
@@ -346,6 +367,39 @@ fn handle_control(app: &Arc<App>, value: &Value, src: IpAddr) {
                 engine::stop_session(app, false);
             }
         }
+        "logs_request" => {
+            let token = s(value, "token");
+            let port = p(value, "upload_port");
+            let paired = app
+                .config
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .peer(&id)
+                .is_some();
+            if paired && port != 0 && !token.is_empty() {
+                let app = app.clone();
+                let host = src.to_string();
+                thread::spawn(move || {
+                    if let Err(err) = crate::logs::send_bundle(&app, &host, port, &token) {
+                        app.log(format!("remote log upload failed: {err:#}"));
+                    }
+                });
+            }
+        }
+        "session_reset" => {
+            let is_master = app
+                .session
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .map(|s| s.role == "master" && s.peer_id == id)
+                .unwrap_or(false);
+            if is_master {
+                engine::stop_session(app, false);
+                *app.suppress_until.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                app.log("peer client restarted; master stopped for a clean reconnect");
+            }
+        }
         "session_ack" => {}
         "peer" => {}
         "discover" => {}
@@ -532,8 +586,21 @@ pub fn send_session_start(app: &Arc<App>, peer: &PairedPeer, edge: &str) {
     send_to(app, &msg, parse_or(&peer.ip), peer.control_port);
 }
 
-pub fn send_session_stop(app: &Arc<App>, peer_ip: &str, peer_id: &str) {
-    let config = app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
+pub fn send_logs_request(
+    app: &Arc<App>,
+    peer: &PairedPeer,
+    token: &str,
+    upload_port: u16,
+) {
+    let mut msg = base(app, "logs_request");
+    if let Value::Object(map) = &mut msg {
+        map.insert("token".to_string(), json!(token));
+        map.insert("upload_port".to_string(), json!(upload_port));
+    }
+    send_to(app, &msg, parse_or(&peer.ip), peer.control_port);
+}
+
+pub fn send_session_stop(app: &Arc<App>, peer_ip: &str, peer_id: &str) {    let config = app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let port = config
         .peer(peer_id)
         .map(|p| p.control_port)

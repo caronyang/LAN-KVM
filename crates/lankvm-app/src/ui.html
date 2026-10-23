@@ -394,7 +394,7 @@ async function quitApp() {
   document.body.innerHTML = `<p style="padding:40px;color:#8ba0b8">LAN-KVM 已結束，可以關閉這個頁面。</p>`;
 }
 async function collectLogs() {
-  toast("正在收集紀錄…");
+  toast("正在收集本機與配對電腦的紀錄…");
   const r = await api("/api/logs", {});
   if (r.ok) toast("已收集到：" + r.path);
   else toast(r.error || "收集失敗");

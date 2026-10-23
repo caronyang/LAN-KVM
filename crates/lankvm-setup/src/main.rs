@@ -79,6 +79,14 @@ fn main() {
     }
 
     fn firewall_rule(name: &str, port: u16) -> bool {
+        firewall_rule_protocol(name, port, "UDP")
+    }
+
+    fn firewall_rule_tcp(name: &str, port: u16) -> bool {
+        firewall_rule_protocol(name, port, "TCP")
+    }
+
+    fn firewall_rule_protocol(name: &str, port: u16, protocol: &str) -> bool {
         let _ = run(
             "netsh",
             &["advfirewall", "firewall", "delete", "rule", &format!("name={name}")],
@@ -94,7 +102,7 @@ fn main() {
                 &format!("name={name}"),
                 "dir=in",
                 "action=allow",
-                "protocol=UDP",
+                &format!("protocol={protocol}"),
                 &format!("localport={port}"),
                 "profile=any",
             ],
@@ -107,14 +115,8 @@ fn main() {
         if let Some(dir) = args.get(1) {
             let dir = PathBuf::from(dir);
             let _ = std::fs::create_dir_all(&dir);
-            let app = std::fs::write(dir.join("lankvm-app.exe"), APP_BYTES);
-            let service = std::fs::write(dir.join("lankvm-service.exe"), SERVICE_BYTES);
-            match (app, service) {
-                (Ok(_), Ok(_)) => message(&format!("已解壓縮到 {}", dir.display()), false),
-                _ => message("解壓縮失敗。", true),
-            }
-        } else {
-            message("用法：LAN-KVM-Setup-0.2.exe --extract <資料夾>", true);
+            let _ = std::fs::write(dir.join("lankvm-app.exe"), APP_BYTES);
+            let _ = std::fs::write(dir.join("lankvm-service.exe"), SERVICE_BYTES);
         }
         return;
     }
@@ -151,6 +153,10 @@ fn main() {
     let _ = exe;
 
     quit_running_app();
+    thread::sleep(Duration::from_millis(800));
+    // Clear orphan engine clients from older builds; they would otherwise
+    // keep UDP 45872 and prevent the SYSTEM service from injecting.
+    let _ = run("taskkill.exe", &["/F", "/IM", "lankvm-app.exe", "/T"]);
 
     // The old P0 service occupies the same ports; remove it if present.
     let _ = run("sc.exe", &["stop", "LAN-KVM"]);
@@ -179,6 +185,10 @@ fn main() {
         }
         thread::sleep(Duration::from_millis(250));
     }
+    // Kill leftover session agents that may still own a visible console in the
+    // user session (older builds launched them without CREATE_NO_WINDOW).
+    let _ = run("taskkill.exe", &["/F", "/IM", "lankvm-service.exe", "/T"]);
+    thread::sleep(Duration::from_millis(500));
 
     let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
     let install_dir = PathBuf::from(program_files).join("LAN-KVM");
@@ -238,6 +248,7 @@ fn main() {
     firewall_ok &= firewall_rule("LAN-KVM Discovery", 45870);
     firewall_ok &= firewall_rule("LAN-KVM Control", 45871);
     firewall_ok &= firewall_rule("LAN-KVM Data", 45872);
+    firewall_ok &= firewall_rule_tcp("LAN-KVM Logs", 45873);
     setup_log(&format!("firewall_ok={firewall_ok}"));
 
     let target = app_target.display().to_string();

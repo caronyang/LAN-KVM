@@ -12,6 +12,8 @@
 |------|------|
 | 安裝程式 | 單一 `LAN-KVM-Setup-0.2.exe`（內嵌 App 與服務） |
 | 系統匣常駐 | 完成：左鍵開 UI、右鍵選單（連線/掃描/收集紀錄/結束） |
+| 不顯示 console | session agent 以 `CREATE_NO_WINDOW` 啟動 |
+| A 收集時一併抓 B 的 log | 完成：TCP 45873 回傳，存成 `peer-<名稱>/` |
 | 自動防火牆規則（UDP 45870/45871/45872） | 完成（安裝時） |
 | 開機自動啟動（HKCU Run，`--silent`） | 完成 |
 | 桌面／開始功能表捷徑 | 完成 |
@@ -46,8 +48,12 @@ lankvm-app.exe
 
 LAN-KVM SYSTEM service（client 端）
 ├─ 常駐 LocalSystem，開機自動啟動
+├─ session agent 以 CREATE_NO_WINDOW 啟動（不顯示黑色指令視窗）
 ├─ session agent 在 Default / Winlogon 桌面上注入
-└─ 監聽 UDP 45872；App 用 Ping/Pong 探測是否就緒
+└─ 監聽 UDP 45872；App 用 Ping/Pong（d=1）探測是否就緒
+
+Log 回傳
+└─ TCP 45873：A 收集紀錄時，B 把打包日誌 POST 回 A
 ```
 
 - **沒有 console**：`lankvm-app.exe`、`lankvm-setup.exe`、`lankvm-service.exe` 都不開視窗。
@@ -103,18 +109,25 @@ LAN-KVM SYSTEM service（client 端）
 
 ### 4.1 收集測試紀錄
 
-兩台測完都按 UI 右上「收集紀錄」。會在使用者桌面（或 OneDrive 桌面／使用者目錄）建立：
+兩台測完，任一台按 UI 右上「收集紀錄」或系統匣右鍵「收集紀錄」。它會：
+
+1. 收集本機的 app/engine/service/session/system/setup 日誌。
+2. 透過 TCP 45873 向**已配對且在線**的另一台要 log（對方會打包回傳）。
+3. 在桌面（或 OneDrive 桌面／使用者目錄）建立：
 
 ```
-LAN-KVM-logs-<電腦名>-<epoch>
+LAN-KVM-logs-<電腦名>-<時間>
   app.log engine.log app.json state.json
   service.log session.log
   system.txt
   setup.log
+  peer-<對方名稱>/     ← 對方回傳的完整日誌
   README.txt
 ```
 
-`system.txt` 內含 `ipconfig /all`、`sc query LAN-KVM`、UDP 端點、三條防火牆規則。把兩台整個資料夾交給開發者即可。
+把整個資料夾交給開發者即可，不需要手動去另一台找 log。
+
+> 需要防火牆允許 TCP 45873；安裝程式會自動加 `LAN-KVM Logs` 規則。
 
 ---
 
@@ -136,6 +149,9 @@ LAN-KVM-logs-<電腦名>-<epoch>
 | client 改走 SYSTEM 服務（session agent 模擬） | PASS（B session `uses_service=true`、master 正常連線） |
 | 系統匣圖示 | PASS（`tray: icon installed`，exe icon 為 Seam） |
 | 單一 setup 內嵌 App/服務 | PASS（`--extract` 出來的 hash 與 build 完全一致） |
+| A 收集時抓 B 的 log | PASS（`peer-<名稱>/`） |
+| session agent 無 console | 已改 `CREATE_NO_WINDOW`（待實機確認） |
+| 服務重啟後 master 自動重置 | 已加 `session_reset`（待實機確認） |
 | UI「收集紀錄」 | PASS（含 app/engine/service/session/system/setup 日誌） |
 | Release build 重跑配對與自動連線 | PASS |
 
@@ -147,7 +163,7 @@ LAN-KVM-logs-<電腦名>-<epoch>
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2.exe   6FC51CB5C06F1BFEA86765F01A9D891C307B023D2D2571B9E49D735053B00F10
+  LAN-KVM-Setup-0.2.exe   5E3AD323EF178F690ABB9FF391A5C22BDE651A5A7F728E59023960B3E4F5652A
   README.txt
 ```
 

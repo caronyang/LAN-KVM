@@ -134,6 +134,9 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                 let mut pong = Packet::new(PacketKind::Pong, seq);
                 seq = seq.wrapping_add(1);
                 pong.a = packet.a;
+                // Marker so the app's health probe only accepts the SYSTEM
+                // service, not an orphan user-level client.
+                pong.d = 1;
                 if let Err(err) = socket.send_to(&pong.encode(), addr) {
                     log("session", format!("UDP pong failed: {err}"));
                 }
