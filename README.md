@@ -13,6 +13,7 @@
 - [服務 + 登入畫面 PoC](docs/06-service-login-poc.md)
 - [v0.1-local 單機驗證](docs/07-local-verification.md)
 - [研發歷程與接手說明](docs/08-development-history.md)
+- [新場域測試計畫（Gate 0–5）](docs/09-next-test-plan.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 - [Logo 與品牌資產](assets/branding/gallery.html)（規範：`assets/branding/README.md`）
 
@@ -45,6 +46,18 @@ Winlogon 本機測試：
 詳細步驟與預期輸出見 [`docs/07-local-verification.md`](docs/07-local-verification.md)。
 
 ## 跨機測試（VM）
+
+先確認 UDP 路徑（不需要 service，不需建置）：
+
+```powershell
+# B（管理員）
+.\net-check.ps1 -Mode listen -Port 45871 -Seconds 120 -AddFirewallRule
+
+# A
+.\net-check.ps1 -Mode send -Peer <B_IP> -Port 45871
+```
+
+看到 `RESULT: PASS - 10/10 replies` 再往下。
 
 B：
 
