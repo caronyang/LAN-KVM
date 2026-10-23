@@ -343,6 +343,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "lankvm-core",
+ "lankvm-net",
  "lankvm-platform",
  "serde",
  "serde_json",

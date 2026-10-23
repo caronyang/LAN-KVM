@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -67,6 +68,8 @@ fn spawn(app: &Arc<App>, mut args: Vec<String>, role: &str, peer_id: &str, peer_
         pid,
         stop_file,
         started: Instant::now(),
+        last_seen: Instant::now(),
+        uses_service: false,
     });
     Ok(())
 }
@@ -96,6 +99,7 @@ pub fn start_master(
     spawn(app, args, "master", peer_id, peer_ip, data_port)
 }
 
+#[allow(dead_code)]
 pub fn start_client(
     app: &Arc<App>,
     peer_id: &str,
@@ -123,6 +127,18 @@ pub fn stop_session(app: &Arc<App>, send_peer_stop: bool) {
     let Some(session) = session else {
         return;
     };
+
+    if session.uses_service {
+        *app.session.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        app.log(format!(
+            "service client session cleared (peer={})",
+            session.peer_id
+        ));
+        if send_peer_stop {
+            crate::net::send_session_stop(app, &session.peer_ip, session.peer_id.as_str());
+        }
+        return;
+    }
 
     let _ = fs::write(&session.stop_file, b"stop");
 
@@ -157,6 +173,17 @@ pub fn stop_session(app: &Arc<App>, send_peer_stop: bool) {
 }
 
 pub fn engine_alive(app: &Arc<App>) -> bool {
+    let uses_service = app
+        .session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|s| s.uses_service)
+        .unwrap_or(false);
+    if uses_service {
+        return app.service_ok.load(Ordering::Relaxed);
+    }
+
     let mut guard = app.engine.lock().unwrap_or_else(|e| e.into_inner());
     let Some(child) = guard.as_mut() else {
         return false;

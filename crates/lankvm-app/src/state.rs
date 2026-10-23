@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -124,6 +125,9 @@ pub struct Session {
     pub pid: u32,
     pub stop_file: PathBuf,
     pub started: Instant,
+    pub last_seen: Instant,
+    /// Client sessions are served by the SYSTEM service, not a child engine.
+    pub uses_service: bool,
 }
 
 pub struct App {
@@ -135,6 +139,7 @@ pub struct App {
     pub suppress_until: Mutex<Option<Instant>>,
     pub engine: Mutex<Option<std::process::Child>>,
     pub stop_lock: Mutex<()>,
+    pub service_ok: AtomicBool,
     pub http_port: u16,
     pub control_port: u16,
     pub data_port: u16,
@@ -160,6 +165,7 @@ impl App {
             suppress_until: Mutex::new(None),
             engine: Mutex::new(None),
             stop_lock: Mutex::new(()),
+            service_ok: AtomicBool::new(false),
             http_port,
             control_port,
             data_port,
@@ -248,6 +254,7 @@ impl App {
             "version": env!("CARGO_PKG_VERSION"),
             "paused": config.paused,
             "suppressed": suppressed,
+            "service_running": self.service_ok.load(Ordering::Relaxed),
             "settings": {
                 "edge": config.edge,
                 "trigger_px": config.trigger_px,
@@ -283,6 +290,7 @@ impl App {
                 "peer_ip": s.peer_ip,
                 "data_port": s.data_port,
                 "pid": s.pid,
+                "uses_service": s.uses_service,
                 "uptime_secs": s.started.elapsed().as_secs(),
             })),
             "logs": logs.iter().rev().take(30).cloned().collect::<Vec<_>>(),

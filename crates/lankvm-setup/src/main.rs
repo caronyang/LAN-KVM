@@ -140,7 +140,31 @@ fn main() {
 
     // The old P0 service occupies the same ports; remove it if present.
     let _ = run("sc.exe", &["stop", "LAN-KVM"]);
+    for _ in 0..40 {
+        let running = Command::new("sc.exe")
+            .args(["query", "LAN-KVM"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("RUNNING"))
+            .unwrap_or(false);
+        if !running {
+            break;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
     let _ = run("sc.exe", &["delete", "LAN-KVM"]);
+    for _ in 0..80 {
+        let exists = Command::new("sc.exe")
+            .args(["query", "LAN-KVM"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !exists {
+            break;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
 
     let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
     let install_dir = PathBuf::from(program_files).join("LAN-KVM");
@@ -164,6 +188,47 @@ fn main() {
         );
         return;
     }
+
+    // The SYSTEM service is the client engine; it is what makes Winlogon and
+    // UAC injection possible. Copy it beside the app and install it.
+    let service_source = source_dir.join("lankvm-service.exe");
+    let service_target = install_dir.join("lankvm-service.exe");
+    let service_ok = if service_source.exists() {
+        match std::fs::copy(&service_source, &service_target) {
+            Ok(_) => {
+                let config_dir = PathBuf::from("C:\\ProgramData\\LAN-KVM");
+                let _ = std::fs::create_dir_all(&config_dir);
+                let _ = std::fs::write(
+                    config_dir.join("config.txt"),
+                    "client_port=45872\nrelease_px=2\n",
+                );
+                // Wait for a previous service to be fully deleted.
+                for _ in 0..80 {
+                    let status = Command::new("sc.exe")
+                        .args(["query", "LAN-KVM"])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .status();
+                    if status.map(|s| !s.success()).unwrap_or(true) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(250));
+                }
+                let installed = run(
+                    &service_target.display().to_string(),
+                    &["install"],
+                );
+                setup_log(&format!("service install -> {installed}"));
+                installed
+            }
+            Err(err) => {
+                setup_log(&format!("service copy failed: {err}"));
+                false
+            }
+        }
+    } else {
+        setup_log("lankvm-service.exe missing from package");
+        false
+    };
 
     // Inbound UDP: discovery, control/pairing, input session.
     let mut firewall_ok = true;
@@ -227,11 +292,17 @@ fn main() {
     } else {
         "注意：防火牆規則建立失敗。請用管理員 PowerShell 手動加 UDP 45870-45872，或洽 IT。"
     };
+    let service_note = if service_ok {
+        "SYSTEM 服務已安裝並啟動（支援登入畫面/UAC）。"
+    } else {
+        "注意：SYSTEM 服務安裝失敗（可能被防毒隔離）。登入畫面/UAC 控制將無法使用；請看 %TEMP%\\lankvm-setup.log。"
+    };
 
     message(
         &format!(
             "LAN-KVM 安裝完成。\n\n\
              {firewall_note}\n\
+             {service_note}\n\
              已設定開機啟動與桌面/開始功能表捷徑。\n\
              瀏覽器會開啟設定頁面；兩台電腦都安裝後，在「掃描到的電腦」選擇對方配對。\n\n\
              安裝記錄：%TEMP%\\lankvm-setup.log\n\

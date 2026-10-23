@@ -1,4 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -9,7 +10,7 @@ use serde_json::{json, Value};
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::engine;
-use crate::state::{save, App, Pairing, PairedPeer, PeerInfo};
+use crate::state::{save, App, Pairing, PairedPeer, PeerInfo, Session};
 
 pub const DISCOVERY_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 42, 99);
 static LAST_PAIR_OPEN: AtomicU64 = AtomicU64::new(0);
@@ -106,8 +107,46 @@ pub fn start(
     start_control(app.clone(), control_port)?;
     start_discovery(app.clone(), discovery_port)?;
     start_announce(app.clone(), discovery_port)?;
+    start_service_watch(app.clone());
     start_supervisor(app);
     Ok(())
+}
+
+fn service_running(app: &Arc<App>) -> bool {
+    // The client engine (SYSTEM service) answers P0 Ping on the data port.
+    // This is more reliable than parsing localized `sc` output and also
+    // proves the injection listener is actually ready.
+    let Ok(socket) = UdpSocket::bind(("127.0.0.1", 0)) else {
+        return false;
+    };
+    let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
+    let mut ping = lankvm_net::Packet::new(lankvm_net::PacketKind::Ping, 0);
+    ping.a = 0;
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, app.data_port));
+    if socket.send_to(&ping.encode(), addr).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 64];
+    match socket.recv_from(&mut buf) {
+        Ok((n, _)) => lankvm_net::Packet::decode(&buf[..n])
+            .map(|p| p.kind == lankvm_net::PacketKind::Pong)
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+fn start_service_watch(app: Arc<App>) {
+    thread::spawn(move || loop {
+        let running = service_running(&app);
+        let previous = app.service_ok.swap(running, Ordering::Relaxed);
+        if previous != running {
+            app.log(format!(
+                "client engine {}",
+                if running { "ready (SYSTEM service)" } else { "not ready" }
+            ));
+        }
+        thread::sleep(Duration::from_secs(5));
+    });
 }
 
 fn start_discovery(app: Arc<App>, port: u16) -> Result<()> {
@@ -452,21 +491,35 @@ fn handle_session_start(app: &Arc<App>, value: &Value) {
         return;
     }
 
-    let existing = app
-        .session
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_ref()
-        .map(|s| s.role == "client" && s.peer_id == id)
-        .unwrap_or(false);
-    if existing && engine::engine_alive(app) {
+    let now = Instant::now();
+    let mut session = app.session.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(existing) = session.as_mut() {
+        if existing.role == "client" && existing.peer_id == id && existing.uses_service {
+            existing.last_seen = now;
+            return;
+        }
+    }
+
+    if !app.service_ok.load(Ordering::Relaxed) {
+        app.log("session_start ignored: SYSTEM service is not running");
         return;
     }
 
-    match engine::start_client(app, &id, &paired.ip, app.data_port, config.release_px) {
-        Ok(()) => app.log(format!("client session started for {}", paired.name)),
-        Err(err) => app.log(format!("client session failed: {err:#}")),
-    }
+    *session = Some(Session {
+        peer_id: id.clone(),
+        role: "client".to_string(),
+        peer_ip: paired.ip.clone(),
+        data_port: app.data_port,
+        pid: 0,
+        stop_file: PathBuf::new(),
+        started: now,
+        last_seen: now,
+        uses_service: true,
+    });
+    app.log(format!(
+        "client session via SYSTEM service for {} ({})",
+        paired.name, paired.ip
+    ));
 }
 
 pub fn send_session_start(app: &Arc<App>, peer: &PairedPeer, edge: &str) {
@@ -517,18 +570,31 @@ fn start_supervisor(app: Arc<App>) {
                 .unwrap_or_else(|e| e.into_inner())
                 .is_some();
             if has_session {
-                let _ = engine::engine_alive(&app);
+                let snapshot = app
+                    .session
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                let alive = engine::engine_alive(&app);
+                let stale_client = snapshot
+                    .as_ref()
+                    .map(|s| {
+                        s.uses_service
+                            && (!alive || s.last_seen.elapsed() > Duration::from_secs(15))
+                    })
+                    .unwrap_or(false);
+                if stale_client {
+                    *app.session.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                    app.log("client session cleared (service down or master gone)");
+                    continue;
+                }
 
                 // Keep telling the client to run. If its engine died, this
-                // restarts it without restarting the master.
+                // restarts it without restarting the master. On the client
+                // side it just refreshes last_seen.
                 if last_keepalive.elapsed() > Duration::from_secs(5) {
                     last_keepalive = Instant::now();
-                    let session = app
-                        .session
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .clone();
-                    if let Some(session) = session {
+                    if let Some(session) = snapshot {
                         if session.role == "master" {
                             let config = app
                                 .config
@@ -583,6 +649,30 @@ fn start_supervisor(app: Arc<App>) {
             let trigger_ms = config.trigger_ms;
 
             let Some(info) = app.peer_by_id(&peer.id) else {
+                // Not discovered yet (for example B is sitting at the login
+                // screen before its UI starts). Fall back to the address saved
+                // at pairing time; the SYSTEM service is already listening.
+                if peer.data_port != 0 && !peer.ip.is_empty() {
+                    match engine::start_master(
+                        &app,
+                        &peer.id,
+                        &peer.ip,
+                        peer.data_port,
+                        &edge,
+                        trigger_px,
+                        trigger_ms,
+                    ) {
+                        Ok(()) => {
+                            send_session_start(&app, &peer, &edge);
+                            last_keepalive = Instant::now();
+                            app.log(format!(
+                                "auto-connect master -> {} ({}, saved address)",
+                                peer.name, peer.ip
+                            ));
+                        }
+                        Err(err) => app.log(format!("auto-connect failed: {err:#}")),
+                    }
+                }
                 continue;
             };
             if info.last_seen.elapsed() > Duration::from_secs(10) {

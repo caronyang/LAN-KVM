@@ -229,6 +229,10 @@ fn route(app: &Arc<App>, url: &str, payload: &Value) -> Value {
                 Some(Instant::now() + Duration::from_secs(60));
             json!({"ok": true})
         }
+        "/api/logs" => match crate::logs::collect(app) {
+            Ok(path) => json!({"ok": true, "path": path.display().to_string()}),
+            Err(err) => json!({"ok": false, "error": format!("{err:#}")}),
+        },
         "/api/autoconnect" => {
             let peer_id = payload
                 .get("peer_id")

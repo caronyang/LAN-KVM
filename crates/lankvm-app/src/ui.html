@@ -88,6 +88,7 @@
   <span class="sub" id="hdrStatus"></span>
   <span style="flex:1"></span>
   <button class="small" onclick="scan()">重新掃描</button>
+  <button class="small" onclick="collectLogs()">收集紀錄</button>
   <button class="small danger" onclick="quitApp()">結束程式</button>
 </header>
 
@@ -290,7 +291,9 @@ function renderSession(s) {
   card.style.display = "";
   const peer = (s.paired || []).find(p => p.id === sess.peer_id);
   document.getElementById("sessPeer").textContent = peer ? `${peer.name} (${sess.peer_ip})` : sess.peer_ip;
-  document.getElementById("sessRole").textContent = sess.role === "master" ? "主控" : "被控";
+  document.getElementById("sessRole").textContent = sess.role === "master"
+    ? "主控"
+    : (sess.uses_service ? "被控（SYSTEM 服務）" : "被控");
   const sec = sess.uptime_secs;
   document.getElementById("sessTime").textContent =
     `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
@@ -298,13 +301,16 @@ function renderSession(s) {
 
 function renderBanner(s) {
   const el = document.getElementById("globalBanner");
-  if (s.paused) {
-    el.innerHTML = `<div class="banner"><strong>自動連線已暫停。</strong> 按左側「恢復自動連線」即可。</div>`;
-  } else if (s.suppressed) {
-    el.innerHTML = `<div class="banner">手動停止後 60 秒內不會自動重連。</div>`;
-  } else {
-    el.innerHTML = "";
+  let html = "";
+  if (!s.service_running) {
+    html += `<div class="banner bad"><strong>client 引擎（SYSTEM 服務）未就緒。</strong> 這一版需要 LAN-KVM 服務才能接受連線與控制登入畫面/UAC。請確認 <code>sc query LAN-KVM</code> 是 RUNNING，或重新安裝。</div>`;
   }
+  if (s.paused) {
+    html += `<div class="banner"><strong>自動連線已暫停。</strong> 按左側「恢復自動連線」即可。</div>`;
+  } else if (s.suppressed) {
+    html += `<div class="banner">手動停止後 60 秒內不會自動重連。</div>`;
+  }
+  el.innerHTML = html;
 }
 
 function renderPairing(s) {
@@ -386,6 +392,12 @@ async function quitApp() {
   if (!confirm("結束 LAN-KVM 常駐程式？")) return;
   await api("/api/quit");
   document.body.innerHTML = `<p style="padding:40px;color:#8ba0b8">LAN-KVM 已結束，可以關閉這個頁面。</p>`;
+}
+async function collectLogs() {
+  toast("正在收集紀錄…");
+  const r = await api("/api/logs", {});
+  if (r.ok) toast("已收集到：" + r.path);
+  else toast(r.error || "收集失敗");
 }
 
 refresh();

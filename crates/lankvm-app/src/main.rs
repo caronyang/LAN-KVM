@@ -2,6 +2,7 @@
 
 mod engine;
 mod http;
+mod logs;
 mod net;
 mod state;
 

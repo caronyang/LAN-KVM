@@ -2,7 +2,7 @@
 
 軟體式 KVM：在同一個網段的 2–3 台電腦之間共用一組鍵盤/滑鼠，支援無縫邊界切換、剪貼簿共享與檔案傳輸。目標平台為 Windows / macOS / Linux，目前只有 Windows 可實測。
 
-> 目前狀態：**v0.2-app 安裝版**（單機流程驗證完成，待兩台實機驗收）。已驗證：UDP 握手/邊界切換、游標隱藏/釘住、Raw Input、絕對游標、剪貼簿文字/圖片/檔案、剪貼簿監聽、本機檔案分塊複製、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入。2026-10-23 於新場域完成跨機驗證：A→B UDP 10/10、滑鼠/鍵盤、Winlogon 注入 `inject_fail=0`。v0.2 新增可安裝常駐 App：自動防火牆、區網探索、3 位數配對、開機自動連線、瀏覽器 UI。
+> 目前狀態：**v0.2-app 安裝版**（單機流程驗證完成，待兩台實機驗收）。已驗證：UDP 握手/邊界切換、游標隱藏/釘住、Raw Input、絕對游標、剪貼簿文字/圖片/檔案、剪貼簿監聽、本機檔案分塊複製、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入。2026-10-23 於新場域完成跨機驗證：A→B UDP 10/10、滑鼠/鍵盤、Winlogon 注入 `inject_fail=0`。v0.2 新增可安裝常駐 App：自動防火牆、區網探索、3 位數配對、開機自動連線、瀏覽器 UI；client 注入走 SYSTEM 服務（支援 Winlogon/UAC），並有一鍵 log 收集。
 
 ## 文件
 
