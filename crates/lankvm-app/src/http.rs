@@ -203,14 +203,20 @@ fn route(app: &Arc<App>, url: &str, payload: &Value) -> Value {
             if peer.role != "master" {
                 return json!({"ok": false, "error": "這台是 client，請由主控端發起"});
             }
-            let Some(info) = app.peer_by_id(peer_id) else {
-                return json!({"ok": false, "error": "對方目前不在線上"});
+            let (peer_ip, peer_data_port) = match app.peer_by_id(peer_id) {
+                Some(info) => (info.ip, info.data_port),
+                None if !peer.ip.is_empty() && peer.data_port != 0 => {
+                    (peer.ip.clone(), peer.data_port)
+                }
+                None => {
+                    return json!({"ok": false, "error": "對方目前不在線上，且沒有可用的配對位址"});
+                }
             };
             if let Err(err) = engine::start_master(
                 app,
                 &peer.id,
-                &info.ip,
-                info.data_port,
+                &peer_ip,
+                peer_data_port,
                 &edge,
                 trigger_px,
                 trigger_ms,

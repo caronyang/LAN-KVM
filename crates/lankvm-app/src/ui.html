@@ -33,6 +33,7 @@
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); display: inline-block; margin-right: 6px; }
   .dot.on { background: var(--good); box-shadow: 0 0 8px #39d98a88; }
   main { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px 22px 40px; max-width: 1280px; margin: 0 auto; }
+  #globalBanner:empty { display: none; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
   .card h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin: 0 0 12px; font-weight: 600; }
@@ -215,10 +216,14 @@ function render() {
   const online = (s.peers || []).filter(p => p.online).length;
   const sess = s.session;
   document.getElementById("ownState").textContent = sess
-    ? (sess.role === "master" ? "控制對方中" : "被控制中")
+    ? (sess.role === "master"
+        ? (online ? "控制對方中" : "等待對方上線")
+        : "被控制中")
     : (online ? `待機（看到 ${online} 台）` : "待機");
   document.getElementById("hdrStatus").innerHTML = sess
-    ? `<span class="dot on"></span>已連線`
+    ? (online
+        ? `<span class="dot on"></span>已連線`
+        : `<span class="dot"></span>等待對方上線`)
     : `<span class="dot ${online ? "on" : ""}"></span>${online ? online + " 台可用" : "掃描中"}`;
 
   const edge = document.getElementById("edge");
@@ -244,7 +249,13 @@ function renderPeers(s) {
   const pairedIds = new Set((s.paired || []).map(p => p.id));
   const peers = s.peers || [];
   if (!peers.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="muted">尚無資料。兩台都要開著 LAN-KVM，且在同一個網段。</td></tr>`;
+    const paired = s.paired || [];
+    if (paired.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">已配對：<strong>${paired.map(p => esc(p.name)).join("、")}</strong>（目前離線）。<br>
+        對方在登入頁時，請確認同一版本、B 的 LAN-KVM 服務是 RUNNING、登入頁 Wi-Fi/網路已連上；<strong>B 的 App 不需要啟動</strong>。</td></tr>`;
+    } else {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">尚無資料。兩台都要安裝 LAN-KVM；先在其中一台完成配對。</td></tr>`;
+    }
     return;
   }
   tbody.innerHTML = peers.map(p => {

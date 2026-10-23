@@ -1,12 +1,12 @@
-//! Identity announcements from the SYSTEM session agent.
+//! Identity announcements from the SYSTEM service and session agent.
 //!
-//! The user app only starts after login, but the session agent runs at the
-//! login screen. It reads the app's persistent id from the user's app.json and
-//! periodically announces it, so a paired peer can find this machine (and its
-//! new DHCP address) before anyone logs in.
+//! The user app only starts after login, but the service runs at boot. It
+//! reads the app's persistent id from the user's app.json and announces it via
+//! broadcast/multicast *and* directly to the paired peer's last known address,
+//! so a DHCP change or a blocked broadcast still lets the peer find us.
 
 use std::fs;
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,6 +20,12 @@ use crate::logger::log;
 const DISCOVERY_PORT: u16 = 45_870;
 const DISCOVERY_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 42, 99);
 const CONTROL_PORT: u16 = 45_871;
+
+struct Identity {
+    id: String,
+    name: String,
+    peers: Vec<IpAddr>,
+}
 
 pub fn start(stop: Arc<AtomicBool>, data_port: u16) {
     thread::spawn(move || {
@@ -45,11 +51,11 @@ pub fn start(stop: Arc<AtomicBool>, data_port: u16) {
             }
             tick = tick.wrapping_add(1);
 
-            if let Some((id, name)) = &identity {
+            if let Some(identity) = &identity {
                 let message = json!({
                     "type": "peer",
-                    "id": id,
-                    "name": name,
+                    "id": identity.id,
+                    "name": identity.name,
                     "control_port": CONTROL_PORT,
                     "data_port": data_port,
                     "service": true,
@@ -63,14 +69,21 @@ pub fn start(stop: Arc<AtomicBool>, data_port: u16) {
                     message.as_bytes(),
                     SocketAddr::from((Ipv4Addr::BROADCAST, DISCOVERY_PORT)),
                 );
-                if logged_id != *id {
+                for peer in &identity.peers {
+                    let _ = socket.send_to(
+                        message.as_bytes(),
+                        SocketAddr::new(*peer, DISCOVERY_PORT),
+                    );
+                }
+                if logged_id != identity.id {
                     log(
                         "session",
                         format!(
-                            "identity announce id={id} name={name} control={CONTROL_PORT} data={data_port}"
+                            "identity announce id={} name={} control={CONTROL_PORT} data={data_port} peers={:?}",
+                            identity.id, identity.name, identity.peers
                         ),
                     );
-                    logged_id = id.clone();
+                    logged_id = identity.id.clone();
                 }
             }
 
@@ -79,9 +92,9 @@ pub fn start(stop: Arc<AtomicBool>, data_port: u16) {
     });
 }
 
-fn load_identity() -> Option<(String, String)> {
+fn load_identity() -> Option<Identity> {
     let users = fs::read_dir("C:\\Users").ok()?;
-    let mut best: Option<(SystemTime, String, String)> = None;
+    let mut best: Option<(SystemTime, Identity)> = None;
 
     for entry in users.flatten() {
         let path = entry
@@ -90,22 +103,22 @@ fn load_identity() -> Option<(String, String)> {
             .join("Local")
             .join("LAN-KVM")
             .join("app.json");
-        let Some((modified, id, name)) = read_candidate(&path) else {
+        let Some((modified, identity)) = read_candidate(&path) else {
             continue;
         };
         if best
             .as_ref()
-            .map(|(current, _, _)| modified > *current)
+            .map(|(current, _)| modified > *current)
             .unwrap_or(true)
         {
-            best = Some((modified, id, name));
+            best = Some((modified, identity));
         }
     }
 
-    best.map(|(_, id, name)| (id, name))
+    best.map(|(_, identity)| identity)
 }
 
-fn read_candidate(path: &Path) -> Option<(SystemTime, String, String)> {
+fn read_candidate(path: &Path) -> Option<(SystemTime, Identity)> {
     let text = fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
     let id = value.get("id")?.as_str()?.to_string();
@@ -114,14 +127,21 @@ fn read_candidate(path: &Path) -> Option<(SystemTime, String, String)> {
         .and_then(|value| value.as_str())
         .unwrap_or("LAN-KVM")
         .to_string();
-    let paired = value
-        .get("paired")
-        .and_then(|value| value.as_array())
-        .map(|paired| !paired.is_empty())
-        .unwrap_or(false);
-    if !paired {
+    let paired = value.get("paired")?.as_array()?;
+    if paired.is_empty() {
         return None;
     }
+    let peers: Vec<IpAddr> = paired
+        .iter()
+        .filter_map(|peer| peer.get("ip")?.as_str()?.parse().ok())
+        .collect();
     let modified = fs::metadata(path).and_then(|meta| meta.modified()).ok()?;
-    Some((modified, id, name))
+    Some((
+        modified,
+        Identity {
+            id,
+            name,
+            peers,
+        },
+    ))
 }

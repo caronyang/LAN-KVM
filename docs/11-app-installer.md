@@ -204,7 +204,7 @@ Winlogon: inject failed kind=Motion streak=1 err=存取被拒 (os error 5)
   ```json
   {"type":"peer","id":"...","name":"...","control_port":45871,"data_port":45872,"service":true}
   ```
-  所以即使登入頁的 session agent 還沒起來，服務也能先廣播。
+  同時**unicast 到配對時記住的對方 IP:45870**，所以即使廣播被 AP/防火牆擋掉，對方換 IP 時仍能被找到。
 - A 的 App 收到後用 **id** 比對已配對資料；IP 或 port 變更就更新 `app.json`。
 - 若 A 已有 master 連到舊 IP，會 graceful stop 後由 supervisor 用新 IP 重連。
 - B 的 App 登入後也會廣播；同一 id，不會重複配對。
@@ -221,7 +221,7 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2.exe   C17CEBE3CAB579D585707EABDB46C393BBDFD912F08047ADE7D12A29554A4552
+  LAN-KVM-Setup-0.2.exe   5680F58A2DD15E5A0BF4FA8A59F646606FA4D1F343B19FA622B65A2F1F355C8B
   README.txt
 ```
 
