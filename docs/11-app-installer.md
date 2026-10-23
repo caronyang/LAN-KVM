@@ -221,9 +221,11 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2.exe   5680F58A2DD15E5A0BF4FA8A59F646606FA4D1F343B19FA622B65A2F1F355C8B
+  LAN-KVM-Setup-0.2-login.exe   015B08F40733125547AB6EA8788BDA856B03872EAA1413D7AD3ABFED9BB15914
   README.txt
 ```
+
+> `LAN-KVM-Setup-0.2.exe`（5680）是上一個測試版；`-login` 版多了登入頁 session/桌面 fallback 與啟動診斷。若安裝程式正在執行，請先完成或關閉，再用 `-login` 版。
 
 建置（順序很重要，setup 會 `include_bytes!` 前一步的產物）：
 

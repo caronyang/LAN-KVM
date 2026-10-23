@@ -28,8 +28,9 @@ use windows_sys::Win32::System::RemoteDesktop::{
 };
 use windows_sys::Win32::System::SystemServices::MAXIMUM_ALLOWED;
 use windows_sys::Win32::System::Threading::{
-    CreateProcessAsUserW, GetCurrentProcess, OpenProcess, OpenProcessToken, TerminateProcess,
-    WaitForSingleObject, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, STARTUPINFOW,
+    CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess, OpenProcess, OpenProcessToken,
+    TerminateProcess, WaitForSingleObject, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    STARTUPINFOW,
 };
 
 pub struct Child {
@@ -41,6 +42,17 @@ pub struct Child {
 impl Child {
     pub fn is_running(&self) -> bool {
         unsafe { WaitForSingleObject(self.handle, 0) == WAIT_TIMEOUT }
+    }
+
+    pub fn exit_code(&self) -> u32 {
+        if self.handle.is_null() {
+            return u32::MAX;
+        }
+        let mut code = 0u32;
+        unsafe {
+            GetExitCodeProcess(self.handle, &mut code);
+        }
+        code
     }
 
     pub fn stop(&mut self) {
@@ -63,7 +75,48 @@ impl Drop for Child {
 }
 
 pub fn active_session() -> u32 {
-    unsafe { WTSGetActiveConsoleSessionId() }
+    let id = unsafe { WTSGetActiveConsoleSessionId() };
+    if id != u32::MAX && id != 0 {
+        return id;
+    }
+
+    // At the logon screen (and on some VMs) the API can be unavailable or
+    // return 0. Fall back to the session that owns winlogon.exe.
+    let fallback = winlogon_session();
+    fallback.unwrap_or(id)
+}
+
+fn winlogon_session() -> Option<u32> {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    let mut sessions = Vec::new();
+    let mut has_entry = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
+    while has_entry {
+        let end = entry
+            .szExeFile
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(entry.szExeFile.len());
+        let name = String::from_utf16_lossy(&entry.szExeFile[..end]);
+        if name.eq_ignore_ascii_case("winlogon.exe") {
+            let mut session = 0u32;
+            if unsafe { ProcessIdToSessionId(entry.th32ProcessID, &mut session) } != 0
+                && session != 0
+            {
+                sessions.push(session);
+            }
+        }
+        has_entry = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+    }
+    unsafe { CloseHandle(snapshot) };
+    sessions.sort_unstable();
+    sessions.dedup();
+    // Prefer the session with a user's winlogon; normally there is only one.
+    sessions.into_iter().min()
 }
 
 pub fn enable_privileges() -> Vec<String> {
@@ -119,6 +172,25 @@ fn enable_privilege(name: &str) -> bool {
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub fn launch_session(session_id: u32) -> Result<Child> {
+    match launch_session_desktop(session_id, "winsta0\\default") {
+        Ok(child) => Ok(child),
+        Err(default_err) => {
+            crate::logger::log(
+                "service",
+                format!(
+                    "launch_session session={session_id} desktop=Default failed: {default_err:#}; trying Winlogon"
+                ),
+            );
+            launch_session_desktop(session_id, "winsta0\\Winlogon").map_err(|winlogon_err| {
+                anyhow!(
+                    "default desktop failed: {default_err:#}; winlogon desktop failed: {winlogon_err:#}"
+                )
+            })
+        }
+    }
+}
+
+fn launch_session_desktop(session_id: u32, desktop: &str) -> Result<Child> {
     let token = winlogon_token(session_id)?;
 
     let exe = std::env::current_exe()?;
@@ -130,7 +202,7 @@ pub fn launch_session(session_id: u32) -> Result<Child> {
         command.push_str(&format!(" --client --port {port}"));
     }
     let mut command_wide = to_wide(&command);
-    let mut desktop_wide = to_wide("winsta0\\default");
+    let mut desktop_wide = to_wide(desktop);
 
     let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
     startup.cb = size_of::<STARTUPINFOW>() as u32;
@@ -161,6 +233,14 @@ pub fn launch_session(session_id: u32) -> Result<Child> {
         ));
     }
     unsafe { CloseHandle(process.hThread) };
+
+    crate::logger::log(
+        "service",
+        format!(
+            "launch_session session={session_id} desktop={desktop} pid={} OK",
+            process.dwProcessId
+        ),
+    );
 
     Ok(Child {
         handle: process.hProcess,

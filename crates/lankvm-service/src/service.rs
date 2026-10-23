@@ -89,9 +89,14 @@ fn run_service() -> Result<()> {
     let mut child: Option<Child> = None;
     let mut last_attempt = Instant::now() - Duration::from_secs(30);
     let mut last_active_log = u32::MAX;
+    let mut last_active_seen = u32::MAX;
 
     while shutdown_rx.try_recv().is_err() {
         let active = active_session();
+        if active != last_active_seen {
+            log("service", format!("active session -> {active}"));
+            last_active_seen = active;
+        }
         if active == u32::MAX {
             if last_active_log != active {
                 log("service", "no active console session; waiting");
@@ -108,6 +113,16 @@ fn run_service() -> Result<()> {
 
         if needs_launch && last_attempt.elapsed() >= Duration::from_secs(5) {
             if let Some(mut old) = child.take() {
+                if !old.is_running() {
+                    log(
+                        "service",
+                        format!(
+                            "session agent pid={} exited code={}",
+                            old.pid,
+                            old.exit_code()
+                        ),
+                    );
+                }
                 log(
                     "service",
                     format!(
