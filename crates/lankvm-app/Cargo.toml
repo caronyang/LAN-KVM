@@ -1,0 +1,22 @@
+[package]
+name = "lankvm-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json = "1"
+socket2 = "0.5"
+tiny_http = "0.12"
+lankvm-core = { path = "../lankvm-core" }
+lankvm-platform = { path = "../lankvm-platform" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+] }

@@ -52,11 +52,26 @@ static MAIN_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 static LAST_PONG_MS: AtomicU64 = AtomicU64::new(0);
 static REMOTE_MOTION: AtomicU64 = AtomicU64::new(0);
 static CURSOR_HIDDEN: AtomicBool = AtomicBool::new(false);
+static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
 static RELEASE_REASON: AtomicU32 = AtomicU32::new(0);
 static START: OnceLock<Instant> = OnceLock::new();
 static BOUNDS: OnceLock<Rect> = OnceLock::new();
 static EDGE_KIND: OnceLock<Edge> = OnceLock::new();
 static EDGE: OnceLock<Mutex<EdgeDetector>> = OnceLock::new();
+
+/// Ask the running session in this process to stop gracefully.
+///
+/// Safe to call from another thread. The master unclips/shows the cursor on
+/// exit; the client releases injected keys. Do not kill the process instead.
+pub fn request_stop() {
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
+    let tid = MAIN_THREAD_ID.load(Ordering::SeqCst);
+    if tid != 0 {
+        unsafe {
+            PostThreadMessageW(tid, WM_LANKVM_STOP, 0, 0);
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 enum Event {
@@ -99,6 +114,7 @@ pub fn run_master(
     trigger_ms: u64,
 ) -> Result<()> {
     win::enable_dpi_awareness();
+    STOP_REQUESTED.store(false, Ordering::SeqCst);
 
     let socket =
         UdpSocket::bind(("0.0.0.0", 0)).with_context(|| "failed to bind master UDP socket")?;
@@ -203,6 +219,7 @@ pub fn run_master(
 
 pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     win::enable_dpi_awareness();
+    STOP_REQUESTED.store(false, Ordering::SeqCst);
     let release_px = release_px.max(1);
 
     let socket = UdpSocket::bind(("0.0.0.0", port))
@@ -231,7 +248,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     let mut master_addr: Option<SocketAddr> = None;
     let mut buf = [0u8; 64];
 
-    while !stop.load(Ordering::SeqCst) {
+    while !stop.load(Ordering::SeqCst) && !STOP_REQUESTED.load(Ordering::SeqCst) {
         let (n, addr) = match socket.recv_from(&mut buf) {
             Ok(value) => value,
             Err(err)

@@ -1,0 +1,242 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
+#[cfg(not(windows))]
+fn main() {}
+
+#[cfg(windows)]
+fn main() {
+    use std::net::TcpStream;
+    use std::os::windows::process::CommandExt;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::thread;
+    use std::time::Duration;
+
+    use windows_sys::Win32::UI::Shell::{IsUserAnAdmin, ShellExecuteW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, SW_SHOWNORMAL,
+    };
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    fn message(text: &str, error: bool) {
+        let title = wide("LAN-KVM 安裝程式");
+        let body = wide(text);
+        let flags = if error {
+            MB_OK | MB_ICONERROR
+        } else {
+            MB_OK | MB_ICONINFORMATION
+        };
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                body.as_ptr(),
+                title.as_ptr(),
+                flags,
+            );
+        }
+    }
+
+    fn setup_log(line: &str) {
+        use std::io::Write;
+        let path = std::env::temp_dir().join("lankvm-setup.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "[{}] {line}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+        }
+    }
+
+    fn run(program: &str, args: &[&str]) -> bool {
+        let ok = Command::new(program)
+            .args(args)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        setup_log(&format!("{program} {} -> {ok}", args.join(" ")));
+        ok
+    }
+
+    fn quit_running_app() {
+        if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", 45880)) {
+            let req = "POST /api/quit HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
+            use std::io::Write;
+            let _ = stream.write_all(req.as_bytes());
+            use std::io::Read;
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+            let mut buf = [0u8; 256];
+            let _ = stream.read(&mut buf);
+            thread::sleep(Duration::from_millis(900));
+        }
+    }
+
+    fn firewall_rule(name: &str, port: u16) -> bool {
+        let _ = run(
+            "netsh",
+            &["advfirewall", "firewall", "delete", "rule", &format!("name={name}")],
+        );
+        let port = port.to_string();
+        run(
+            "netsh",
+            &[
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                &format!("name={name}"),
+                "dir=in",
+                "action=allow",
+                "protocol=UDP",
+                &format!("localport={port}"),
+                "profile=any",
+            ],
+        )
+    }
+
+    // Elevate once; the whole install needs the firewall and Program Files.
+    let is_admin = unsafe { IsUserAnAdmin() } != 0;
+    if !is_admin {
+        let exe = std::env::current_exe().unwrap_or_default();
+        let verb = wide("runas");
+        let file = wide(&exe.display().to_string());
+        let params = wide("");
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                verb.as_ptr(),
+                file.as_ptr(),
+                params.as_ptr(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+        if result as isize <= 32 {
+            message("需要系統管理員權限才能安裝（防火牆規則）。", true);
+        }
+        return;
+    }
+
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(err) => {
+            message(&format!("找不到安裝程式：{err}"), true);
+            return;
+        }
+    };
+    let Some(source_dir) = exe.parent() else {
+        message("安裝程式路徑錯誤。", true);
+        return;
+    };
+    let app_source = source_dir.join("lankvm-app.exe");
+    if !app_source.exists() {
+        message("找不到 lankvm-app.exe，請把 setup.exe 和 app 放在同一個資料夾。", true);
+        return;
+    }
+
+    quit_running_app();
+
+    // The old P0 service occupies the same ports; remove it if present.
+    let _ = run("sc.exe", &["stop", "LAN-KVM"]);
+    let _ = run("sc.exe", &["delete", "LAN-KVM"]);
+
+    let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
+    let install_dir = PathBuf::from(program_files).join("LAN-KVM");
+    if let Err(err) = std::fs::create_dir_all(&install_dir) {
+        message(&format!("無法建立安裝目錄：{err}"), true);
+        return;
+    }
+
+    let app_target = install_dir.join("lankvm-app.exe");
+    setup_log(&format!(
+        "install source={} target={}",
+        app_source.display(),
+        app_target.display()
+    ));
+    if let Err(err) = std::fs::copy(&app_source, &app_target) {
+        message(
+            &format!(
+                "複製程式失敗（可能正在執行）：{err}\n請先從 UI 按「結束程式」再試一次。"
+            ),
+            true,
+        );
+        return;
+    }
+
+    // Inbound UDP: discovery, control/pairing, input session.
+    let mut firewall_ok = true;
+    firewall_ok &= firewall_rule("LAN-KVM Discovery", 45870);
+    firewall_ok &= firewall_rule("LAN-KVM Control", 45871);
+    firewall_ok &= firewall_rule("LAN-KVM Data", 45872);
+    setup_log(&format!("firewall_ok={firewall_ok}"));
+
+    let target = app_target.display().to_string();
+    let run_value = format!("\"{target}\" --silent");
+    let _ = run(
+        "reg.exe",
+        &[
+            "add",
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "/v",
+            "LAN-KVM",
+            "/t",
+            "REG_SZ",
+            "/d",
+            &run_value,
+            "/f",
+        ],
+    );
+
+    let shortcut_script = format!(
+        "$ws = New-Object -ComObject WScript.Shell; \
+         $paths = @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Desktop')); \
+         foreach ($p in $paths) {{ \
+           $s = $ws.CreateShortcut((Join-Path $p 'LAN-KVM.lnk')); \
+           $s.TargetPath = '{target}'; \
+           $s.WorkingDirectory = '{dir}'; \
+           $s.IconLocation = '{target},0'; \
+           $s.Save() \
+         }}",
+        target = target,
+        dir = install_dir.display()
+    );
+    let _ = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &shortcut_script,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    // explorer.exe launches the app as the logged-in (non-elevated) user.
+    let app_for_explorer = Path::new(&target);
+    let _ = Command::new("explorer.exe")
+        .arg(app_for_explorer)
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    let firewall_note = if firewall_ok {
+        "已自動加入防火牆規則（UDP 45870/45871/45872）。"
+    } else {
+        "注意：防火牆規則建立失敗。請用管理員 PowerShell 手動加 UDP 45870-45872，或洽 IT。"
+    };
+
+    message(
+        &format!(
+            "LAN-KVM 安裝完成。\n\n\
+             {firewall_note}\n\
+             已設定開機啟動與桌面/開始功能表捷徑。\n\
+             瀏覽器會開啟設定頁面；兩台電腦都安裝後，在「掃描到的電腦」選擇對方配對。\n\n\
+             安裝記錄：%TEMP%\\lankvm-setup.log\n\
+             移除方式：先在 UI 按「結束程式」，再刪除 C:\\Program Files\\LAN-KVM。"
+        ),
+        false,
+    );
+}

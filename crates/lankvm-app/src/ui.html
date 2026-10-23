@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LAN-KVM</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121923;
+    --panel2: #0e1520;
+    --line: #243041;
+    --text: #dbe6f3;
+    --muted: #8ba0b8;
+    --accent: #4cc2ff;
+    --good: #39d98a;
+    --warn: #ffcc66;
+    --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 22px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #101823, #0b0f14);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--good); box-shadow: 0 0 8px #39d98a88; }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px 22px 40px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin: 0 0 12px; font-weight: 600; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed #1b2634; }
+  .row:last-child { border-bottom: 0; }
+  .label { color: var(--muted); font-size: 12px; }
+  .value { font-weight: 600; }
+  button {
+    background: #1b2838; color: var(--text); border: 1px solid #2c3d52;
+    padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #0d3a52; border-color: #1b6c93; color: #bfeaff; }
+  button.danger { border-color: #5a2a2a; color: #ffb3b3; }
+  button.small { padding: 4px 9px; font-size: 12px; }
+  button:disabled { opacity: .4; cursor: default; }
+  select, input[type=number], input[type=text] {
+    background: var(--panel2); border: 1px solid #2c3d52; color: var(--text);
+    border-radius: 8px; padding: 6px 8px; font-size: 13px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #1b2634; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .7px; }
+  tr:last-child td { border-bottom: 0; }
+  .pill { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid #2c3d52; color: var(--muted); }
+  .pill.good { color: var(--good); border-color: #1f6b47; }
+  .pill.warn { color: var(--warn); border-color: #6b5520; }
+  .pill.bad { color: var(--bad); border-color: #6b2b2b; }
+  .muted { color: var(--muted); }
+  .big-code {
+    font: 700 42px/1.1 "Consolas", monospace; letter-spacing: 12px;
+    color: var(--accent); text-align: center; padding: 16px 0 4px;
+  }
+  .banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid #2c3d52; background: #0e1a26; }
+  .banner.good { border-color: #1f6b47; background: #0d2118; }
+  .banner.bad { border-color: #6b2b2b; background: #241012; }
+  .toast { position: fixed; right: 18px; bottom: 18px; background: #16222f; border: 1px solid #2c3d52; padding: 10px 14px; border-radius: 10px; opacity: 0; transition: .2s; }
+  .toast.show { opacity: 1; }
+  .modal-bg { position: fixed; inset: 0; background: #000a; display: none; align-items: center; justify-content: center; z-index: 20; }
+  .modal-bg.show { display: flex; }
+  .modal { width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  pre.logs { max-height: 180px; overflow: auto; background: var(--panel2); border: 1px solid #1b2634; border-radius: 8px; padding: 10px; font-size: 11px; color: #9fb3c8; white-space: pre-wrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LAN-KVM</h1>
+  <span class="sub" id="hdrName">載入中…</span>
+  <span class="sub" id="hdrStatus"></span>
+  <span style="flex:1"></span>
+  <button class="small" onclick="scan()">重新掃描</button>
+  <button class="small danger" onclick="quitApp()">結束程式</button>
+</header>
+
+<main>
+  <section style="display:flex;flex-direction:column;gap:16px">
+    <div class="card">
+      <h2>本機</h2>
+      <div class="row"><span class="label">名稱</span><span class="value" id="ownName">-</span></div>
+      <div class="row"><span class="label">角色</span><span class="value" id="ownRole">-</span></div>
+      <div class="row"><span class="label">自動連線</span><span class="value" id="ownAuto">-</span></div>
+      <div class="row"><span class="label">狀態</span><span class="value" id="ownState">待機</span></div>
+    </div>
+
+    <div class="card">
+      <h2>版面與門檻</h2>
+      <div class="field">
+        <label>對方螢幕在我的</label>
+        <select id="edge">
+          <option value="right">右邊（我往右切過去）</option>
+          <option value="left">左邊（我往左切過去）</option>
+        </select>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>切入推力 px</label><input id="triggerPx" type="number" min="4" max="200" step="1"></div>
+        <div class="field"><label>時間窗 ms</label><input id="triggerMs" type="number" min="80" max="2000" step="10"></div>
+      </div>
+      <div class="field"><label>回切越界 px</label><input id="releasePx" type="number" min="1" max="100" step="1"></div>
+      <div class="actions">
+        <button class="primary" onclick="saveSettings()">儲存設定</button>
+        <button onclick="togglePause()" id="pauseBtn">暫停自動連線</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">設定會在下次連線時套用。左右關係也可在這裡改，不需要改指令。</p>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:16px">
+    <div id="globalBanner"></div>
+
+    <div class="card">
+      <h2>掃描到的電腦</h2>
+      <table>
+        <thead><tr><th>名稱</th><th>IP</th><th>狀態</th><th style="width:180px">動作</th></tr></thead>
+        <tbody id="peerRows"><tr><td colspan="4" class="muted">尚無資料，正在掃描…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="sessionCard" style="display:none">
+      <h2>連線</h2>
+      <div class="row"><span class="label">對象</span><span class="value" id="sessPeer">-</span></div>
+      <div class="row"><span class="label">角色</span><span class="value" id="sessRole">-</span></div>
+      <div class="row"><span class="label">時間</span><span class="value" id="sessTime">-</span></div>
+      <div class="actions" style="margin-top:12px">
+        <button class="danger" onclick="stopSession()">停止連線</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>已配對（開機自動連線）</h2>
+      <table>
+        <thead><tr><th>名稱</th><th>角色</th><th>自動</th><th style="width:200px">動作</th></tr></thead>
+        <tbody id="pairedRows"><tr><td colspan="4" class="muted">尚未配對</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>紀錄</h2>
+      <pre class="logs" id="logs">-</pre>
+    </div>
+  </section>
+</main>
+
+<div class="modal-bg" id="modal">
+  <div class="modal" id="modalBody"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let S = null;
+let busy = false;
+let lastPairKey = "";
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {})
+  });
+  return await res.json().catch(() => ({ ok: false, error: "bad response" }));
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("/api/state", { cache: "no-store" });
+    S = await res.json();
+    render();
+  } catch (e) {
+    document.getElementById("hdrStatus").textContent = "無法連線到本機服務";
+  }
+}
+
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+function render() {
+  const s = S;
+  if (!s) return;
+  document.getElementById("hdrName").textContent = `${s.name} · ${s.version}`;
+  document.getElementById("ownName").textContent = s.name;
+  document.getElementById("ownRole").textContent =
+    (s.paired || []).some(p => p.role === "master") ? "主控（有鍵鼠）" :
+    (s.paired || []).some(p => p.role === "client") ? "被控（接收鍵鼠）" : "未設定";
+  document.getElementById("ownAuto").textContent = s.paused ? "已暫停" : "開啟";
+  document.getElementById("pauseBtn").textContent = s.paused ? "恢復自動連線" : "暫停自動連線";
+
+  const online = (s.peers || []).filter(p => p.online).length;
+  const sess = s.session;
+  document.getElementById("ownState").textContent = sess
+    ? (sess.role === "master" ? "控制對方中" : "被控制中")
+    : (online ? `待機（看到 ${online} 台）` : "待機");
+  document.getElementById("hdrStatus").innerHTML = sess
+    ? `<span class="dot on"></span>已連線`
+    : `<span class="dot ${online ? "on" : ""}"></span>${online ? online + " 台可用" : "掃描中"}`;
+
+  const edge = document.getElementById("edge");
+  if (document.activeElement !== edge) edge.value = s.settings.edge;
+  const tp = document.getElementById("triggerPx");
+  if (document.activeElement !== tp) tp.value = Math.round(s.settings.trigger_px);
+  const tm = document.getElementById("triggerMs");
+  if (document.activeElement !== tm) tm.value = s.settings.trigger_ms;
+  const rp = document.getElementById("releasePx");
+  if (document.activeElement !== rp) rp.value = s.settings.release_px;
+
+  renderPeers(s);
+  renderPaired(s);
+  renderSession(s);
+  renderBanner(s);
+  renderPairing(s);
+  document.getElementById("logs").textContent =
+    [...(s.logs || []), "---- engine ----", ...(s.engine_log || [])].join("\n");
+}
+
+function renderPeers(s) {
+  const tbody = document.getElementById("peerRows");
+  const pairedIds = new Set((s.paired || []).map(p => p.id));
+  const peers = s.peers || [];
+  if (!peers.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">尚無資料。兩台都要開著 LAN-KVM，且在同一個網段。</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = peers.map(p => {
+    const paired = pairedIds.has(p.id);
+    let pill = `<span class="pill good">已配對</span>`;
+    if (!paired) pill = `<span class="pill">可配對</span>`;
+    let actions = paired
+      ? `<button class="small danger" onclick="unpair('${esc(p.id)}')">解除配對</button>`
+      : `<button class="small primary" onclick="pair('${esc(p.id)}')">配對</button>`;
+    return `<tr>
+      <td><strong>${esc(p.name)}</strong></td>
+      <td class="muted">${esc(p.ip)}</td>
+      <td>${pill}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderPaired(s) {
+  const tbody = document.getElementById("pairedRows");
+  const paired = s.paired || [];
+  if (!paired.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">尚未配對。選擇上方電腦後按「配對」。</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = paired.map(p => {
+    const canConnect = p.role === "master";
+    return `<tr>
+      <td><strong>${esc(p.name)}</strong><div class="muted" style="font-size:11px">${esc(p.ip)}</div></td>
+      <td>${p.role === "master" ? "主控" : "被控"}</td>
+      <td><label><input type="checkbox" ${p.auto_connect ? "checked" : ""} onchange="setAuto('${esc(p.id)}', this.checked)"> 開機自動</label></td>
+      <td class="actions">
+        ${canConnect ? `<button class="small primary" onclick="connectPeer('${esc(p.id)}')">立即連線</button>` : ""}
+        <button class="small danger" onclick="unpair('${esc(p.id)}')">解除</button>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+function renderSession(s) {
+  const card = document.getElementById("sessionCard");
+  const sess = s.session;
+  if (!sess) { card.style.display = "none"; return; }
+  card.style.display = "";
+  const peer = (s.paired || []).find(p => p.id === sess.peer_id);
+  document.getElementById("sessPeer").textContent = peer ? `${peer.name} (${sess.peer_ip})` : sess.peer_ip;
+  document.getElementById("sessRole").textContent = sess.role === "master" ? "主控" : "被控";
+  const sec = sess.uptime_secs;
+  document.getElementById("sessTime").textContent =
+    `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
+}
+
+function renderBanner(s) {
+  const el = document.getElementById("globalBanner");
+  if (s.paused) {
+    el.innerHTML = `<div class="banner"><strong>自動連線已暫停。</strong> 按左側「恢復自動連線」即可。</div>`;
+  } else if (s.suppressed) {
+    el.innerHTML = `<div class="banner">手動停止後 60 秒內不會自動重連。</div>`;
+  } else {
+    el.innerHTML = "";
+  }
+}
+
+function renderPairing(s) {
+  const p = s.pairing;
+  const modal = document.getElementById("modal");
+  if (!p) { modal.classList.remove("show"); lastPairKey = ""; return; }
+  const key = `${p.role}:${p.peer_id}:${p.code || ""}:${p.error || ""}`;
+  if (key === lastPairKey && document.activeElement && document.activeElement.id === "codeInput") return;
+  lastPairKey = key;
+  modal.classList.add("show");
+
+  if (p.role === "host") {
+    document.getElementById("modalBody").innerHTML = `
+      <h2 style="margin:0 0 4px;color:var(--text)">配對請求</h2>
+      <p class="muted">${esc(p.peer_name)} 要求配對。請在對方電腦輸入這組號碼：</p>
+      <div class="big-code">${esc(p.code || "---")}</div>
+      <div class="actions" style="justify-content:flex-end;margin-top:14px">
+        <button onclick="cancelPair()">取消</button>
+      </div>`;
+  } else {
+    const err = p.error ? `<div class="banner bad" style="margin-top:10px">${esc(p.error)}</div>` : "";
+    document.getElementById("modalBody").innerHTML = `
+      <h2 style="margin:0 0 4px;color:var(--text)">輸入配對碼</h2>
+      <p class="muted">請看 <strong>${esc(p.peer_name)}</strong> 螢幕上顯示的 3 位數字。</p>
+      <div class="field" style="margin-top:12px">
+        <input id="codeInput" type="text" inputmode="numeric" maxlength="3" placeholder="000"
+          style="font:700 28px Consolas;letter-spacing:10px;text-align:center">
+      </div>
+      ${err}
+      <div class="actions" style="justify-content:flex-end;margin-top:14px">
+        <button onclick="cancelPair()">取消</button>
+        <button class="primary" onclick="submitCode()">確定</button>
+      </div>`;
+    const input = document.getElementById("codeInput");
+    input.focus();
+    input.addEventListener("keydown", e => { if (e.key === "Enter") submitCode(); });
+  }
+}
+
+async function scan() { await api("/api/scan"); toast("已重新掃描"); refresh(); }
+async function pair(id) {
+  const r = await api("/api/pair", { peer_id: id });
+  if (!r.ok) toast(r.error || "配對失敗");
+  refresh();
+}
+async function cancelPair() { await api("/api/pair/cancel"); lastPairKey = ""; refresh(); }
+async function submitCode() {
+  const input = document.getElementById("codeInput");
+  if (!input) return;
+  const r = await api("/api/pair/code", { code: input.value.trim() });
+  if (!r.ok) toast(r.error || "配對失敗");
+  refresh();
+}
+async function unpair(id) {
+  if (!confirm("解除配對後就不會再自動連線，確定？")) return;
+  await api("/api/unpair", { peer_id: id });
+  refresh();
+}
+async function connectPeer(id) {
+  const edge = document.getElementById("edge").value;
+  const r = await api("/api/session/start", { peer_id: id, edge });
+  if (!r.ok) toast(r.error || "連線失敗");
+  refresh();
+}
+async function stopSession() { await api("/api/session/stop"); toast("已停止，60 秒內不自動重連"); refresh(); }
+async function setAuto(id, enabled) { await api("/api/autoconnect", { peer_id: id, enabled }); refresh(); }
+async function saveSettings() {
+  const r = await api("/api/settings", {
+    edge: document.getElementById("edge").value,
+    trigger_px: Number(document.getElementById("triggerPx").value),
+    trigger_ms: Number(document.getElementById("triggerMs").value),
+    release_px: Number(document.getElementById("releasePx").value),
+  });
+  toast(r.ok ? "設定已儲存" : "儲存失敗");
+  refresh();
+}
+async function togglePause() { await api("/api/settings", { paused: !S.paused }); refresh(); }
+async function quitApp() {
+  if (!confirm("結束 LAN-KVM 常駐程式？")) return;
+  await api("/api/quit");
+  document.body.innerHTML = `<p style="padding:40px;color:#8ba0b8">LAN-KVM 已結束，可以關閉這個頁面。</p>`;
+}
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

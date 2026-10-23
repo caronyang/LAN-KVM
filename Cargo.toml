@@ -10,6 +10,8 @@ members = [
     "crates/lankvm-service",
     "crates/lankvm-clipboard",
     "crates/lankvm-files",
+    "crates/lankvm-app",
+    "crates/lankvm-setup",
 ]
 
 [workspace.package]
