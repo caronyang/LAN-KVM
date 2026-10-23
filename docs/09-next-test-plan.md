@@ -205,14 +205,15 @@ A：
 | 2-1 | A 滑鼠推過右邊界 | A：`remote control ON (Right edge, entry ratio ...)`；B：`controlled; entry at (0, y) from left` | ☐ |
 | 2-2 | B 游標是否從左邊界對應高度進入 | Y 比例正確、不明显跳動 | ☐ |
 | 2-3 | A 游標隱藏／釘住 | 不會跑出 A 的螢幕、不會顯示在 B | ☐ |
-| 2-4 | **移動 A 的實體滑鼠向左 ~100px**（回切判定在 client 累積 A 送來的 dx；B 本地滑鼠不會觸發） | A：`OFF (edge)`、游標恢復；B：`released at edge` | ☐ |
+| 2-4 | **把 A 的滑鼠往左推**，讓 B 上的游標回到 B 的左邊界（越界 2px 即回切；B 本地鍵鼠不影響狀態） | A：`OFF (edge)`、游標恢復；B：`cursor reached entry edge -> released to master` | ☐ |
+| 2-4b | 反向版面：A 在 B 右側時改 `--edge left` | 進入點變 B 的右邊界，回切同樣立即 | ☐ |
 | 2-5 | 按 `Ctrl+Alt+Shift+Q` | A 立即取回，B 顯示 released | ☐ |
 | 2-6 | 拔掉 B 網路／停止 service，再從 A 推邊界 | A 顯示 `client not reachable`，**不得**進入 remote、游標不得卡住 | ☐ |
 | 2-7 | A 直接關閉 poc（Ctrl+C） | B 不會卡在注入狀態 | ☐ |
 | 2-8 | 連續進出 20 次 | 無卡鍵、無游標殘留 | ☐ |
 | 2-9 | 兩台螢幕解析度不同 | 邊界與比例仍正確（目前相對注入，手感可能不同） | ☐ |
 
-> **回切（2-4）操作重點**：P0 的 client **不捕捉本地輸入**。回切不是把 B 的滑鼠推到左邊，而是在遠端控制中把 **A 的實體滑鼠往左推**；client 累積 `dx <= -30` 才會送 Release。B 本地滑鼠只會讓 B 的游標停在邊界。這是 P1「local takeover」要解的問題。
+> **回切（2-4）操作重點**：B 的本地鍵鼠**不會**改變狀態。回切是把控制 B 的游標（A 的滑鼠）推回 B 的進入邊界；越界 2px 就送 Release，不再需要多推 30px。若座位左右相反，A 改用 `--edge left`（版面設定，見 `docs/02` 4.5）。
 
 ### 4.3 記錄
 

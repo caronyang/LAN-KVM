@@ -270,8 +270,8 @@ pub fn run_client(port: u16, seconds: u64) -> Result<()> {
                 }
                 win::move_relative(packet.a, packet.b);
                 virtual_x = virtual_x.saturating_add(packet.a);
-                let left_exit = entry_edge == 1 && virtual_x <= -30;
-                let right_exit = entry_edge == 2 && virtual_x >= 30;
+                let left_exit = entry_edge == 1 && virtual_x < 0;
+                let right_exit = entry_edge == 2 && virtual_x > 0;
                 if left_exit || right_exit {
                     send_release(&socket, addr, &mut seq, 5);
                     controlled = false;

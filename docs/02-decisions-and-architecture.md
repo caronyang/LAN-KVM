@@ -185,7 +185,6 @@ struct NodeLayout {
 - 佈局畫布用邏輯單位顯示，儲存時保留實體尺寸與 DPI。
 
 ### 4.2 邊界判定（monitor 級）
-
 不要只用 node 的 bounding box，因為 monitor 可能有空洞（例如上下排列、左右錯開）。
 
 1. 對每個 monitor 的四條邊，扣掉與同一 node 其他 monitor 相鄰的區段。
@@ -212,6 +211,17 @@ target_y = target_monitor.top + clamp(t, 0, 1) * target_monitor.height
 - 混合 DPI：100% + 150%、100% + 200%。
 - 虛擬顯示器：Windows 可用虛擬顯示驅動或外接螢幕；沒有實機時用 DisplayFusion/虛擬螢幕測試。
 - 邊界：四邊、角落、內部邊界、空洞。
+
+### 4.5 節點左右關係（必要設定）
+
+「哪一台在左、哪一台在右」不能寫死，必須由使用者設定：
+
+- **P0**：master 用 `--edge right|left` 指定自己面向 peer 的那一側；被控端的進入邊由 `Switch` 封包帶入（相反側）。
+- **v1 UI**：在佈局畫布上把節點拖到左／右（或上／下），存進 `NodeLayout.canvas_rect`；邊界與進入邊都由佈局推導，不再有 CLI 參數。
+- 設定要能保存（每台機器記住 peer 方位），換場域或換座位不用改程式。
+- 多螢幕時以「外部邊段」為單位設定，不是整台電腦的 bounding box。
+
+> 2026-10-23 測試需求：A 在左、B 在右時 A 用 `--edge right`；若實際座位相反，A 改成 `--edge left`，不需重啟 B。
 
 ---
 

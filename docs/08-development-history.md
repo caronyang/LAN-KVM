@@ -105,9 +105,10 @@
    - 使用 B 的滑鼠要讓 B 當 master；B 當 client 時，B 的滑鼠只會動 B 自己。
    - 本地取回 / 雙向控制 / 動態 master 尚未實作。
 5. **P0 回切方向**
-   - client 不掛本地 hook，回切是 client 累積 master 送來的 `dx`，達 `-30` 才送 Release。
-   - 因此要**移動 master 的實體滑鼠向左**，不是推 client 的本地滑鼠；或按 `Ctrl+Alt+Shift+Q`。
-   - 2026-10-23 新場域實測再次確認此限制。
+   - client 不掛本地 hook；回切是 client 依 master 送來的 `dx` 累積，游標回到進入邊界再外向 2px 即送 Release（2026-10-23 修正，原本要 30px）。
+   - 操作上是**移動 master 的實體滑鼠**把游標推回 client 的進入邊界；client 本地鍵鼠刻意不參與。
+   - 亦可按 `Ctrl+Alt+Shift+Q`。
+   - 版面左右由 master 的 `--edge right|left` 設定；v1 UI 用佈局畫布設定。
 
 ---
 
@@ -338,7 +339,7 @@ Winlogon: input counts ... injected=N inject_fail=0
 | P0 | VM 跨機 UDP | 目前唯一 blocker；乾淨 VM 應可過 |
 | P0 | Winlogon 鍵盤完整測試 | Caps Lock 已在本機 Default 驗證；Winlogon 待 VM |
 | P1 | 絕對定位接入 P0 | 目前 P0 Motion 是 dx/dy；`move_absolute` 已驗證 |
-| P1 | local takeover / 雙向控制 | client 本地滑鼠可一鍵取回；需求「任一電腦可 master」 |
+| P1 | 版面設定 UI | 左右/上下、多螢幕；P0 用 `--edge right\|left`，v1 用佈局畫布 |
 | P1 | QUIC/TLS + mDNS + 配對 | 取代未加密 UDP |
 | P2 | 跨機剪貼簿/檔案同步 | 本機引擎已完成；接傳輸層 |
 | P2 | 拖放（OLE 虛擬檔） | 高難度 |
