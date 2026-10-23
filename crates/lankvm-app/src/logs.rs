@@ -93,6 +93,9 @@ fn fetch_peer(app: &Arc<App>, dir: &PathBuf, peer: &PairedPeer) -> Result<bool> 
     loop {
         match listener.accept() {
             Ok((mut stream, _)) => {
+                // accept() on a nonblocking listener returns a nonblocking
+                // socket on Windows; switch it back before reading.
+                stream.set_nonblocking(false)?;
                 stream.set_read_timeout(Some(Duration::from_secs(20)))?;
                 let (headers, mut body) = read_headers(&mut stream)?;
                 if !token_matches(&headers, &token) {

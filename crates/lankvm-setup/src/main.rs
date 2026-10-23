@@ -287,6 +287,30 @@ fn main() {
     );
     setup_log(&format!("boot task -> {task_ok}"));
 
+    // Extra safety: if the ONSTART attempt was blocked (AV/EDR timing), retry
+    // every 5 minutes with the same SYSTEM action. sc start on a running
+    // service is a harmless no-op error.
+    let ensure_ok = run(
+        "schtasks.exe",
+        &[
+            "/Create",
+            "/TN",
+            "LAN-KVM Ensure Service",
+            "/SC",
+            "MINUTE",
+            "/MO",
+            "5",
+            "/RU",
+            "SYSTEM",
+            "/RL",
+            "HIGHEST",
+            "/TR",
+            &task_action,
+            "/F",
+        ],
+    );
+    setup_log(&format!("ensure task -> {ensure_ok}"));
+
     let target = app_target.display().to_string();
     let run_value = format!("\"{target}\" --silent");
     let _ = run(

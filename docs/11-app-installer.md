@@ -215,6 +215,10 @@ Log：
 
 > 這樣 B 換 IP、或 B 先開機停在登入頁，A 都能用 ID 找到它；不需要手動改 IP。
 
+> **2026-10-23 12:5x 實機 PASS**：B 安裝 `-login3` 後重新開機停在登入頁，A 的狀態為 `peers=1`、B `.69` online、master RTT 4–13 ms、`remote motion 20–84/s`、`ON/OFF (edge)` 正常，A 可直接操作 B 登入頁。
+>
+> 讓它成功的關鍵是 **B 真的換成 `-login3`**：服務 AutoStart/idempotent、登入頁 active session/Winlogon fallback、health probe、ONSTART 排程。
+
 ### 5.4 服務自我修復（開機/登入頁）
 
 - 服務安裝改成 **idempotent**：已存在也會更新為 `AutoStart`、更新 binary path，並確保啟動；不會再只印 “already installed”。
@@ -225,8 +229,9 @@ Log：
 - log：`active session -> N`、`launch_session ... desktop=Default failed ... trying Winlogon`、`launch_session ... OK`、`session agent ... exited code=...`。
 - 安裝程式額外建立：
   - **ONSTART 排程 `LAN-KVM Boot Start`**（SYSTEM 執行 `sc start LAN-KVM`），避免 SCM 沒自動起服務。
+  - **每 5 分鐘 `LAN-KVM Ensure Service`**，若開機那次被 AV/EDR 擋掉會再拉起。
   - 服務失敗自動重啟（`sc failure ... restart/5000/restart/15000/restart/60000`）。
-  - 安裝記錄 `%TEMP%\lankvm-setup.log` 會寫 `boot task -> true/false`。
+  - 安裝記錄 `%TEMP%\lankvm-setup.log` 會寫 `boot task -> true/false`、`ensure task -> true/false`。
 - UI：紅色警告 banner 移到頁面最上方（跨兩欄），不再把右欄卡片往下推。
 
 ---
@@ -235,7 +240,7 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2-login3.exe   1AB6DE4A80BC37B5A97864A8560BA958C0CBF9B74AF8BDBA7E386C24B6A56FA2
+  LAN-KVM-Setup-0.2-login3.exe   8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
   README.txt
 ```
 
