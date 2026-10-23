@@ -1,5 +1,10 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+#[cfg(windows)]
+static APP_BYTES: &[u8] = include_bytes!("../../../target/release/lankvm-app.exe");
+#[cfg(windows)]
+static SERVICE_BYTES: &[u8] = include_bytes!("../../../target/release/lankvm-service.exe");
+
 #[cfg(not(windows))]
 fn main() {}
 
@@ -97,6 +102,23 @@ fn main() {
     }
 
     // Elevate once; the whole install needs the firewall and Program Files.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(|s| s == "--extract").unwrap_or(false) {
+        if let Some(dir) = args.get(1) {
+            let dir = PathBuf::from(dir);
+            let _ = std::fs::create_dir_all(&dir);
+            let app = std::fs::write(dir.join("lankvm-app.exe"), APP_BYTES);
+            let service = std::fs::write(dir.join("lankvm-service.exe"), SERVICE_BYTES);
+            match (app, service) {
+                (Ok(_), Ok(_)) => message(&format!("已解壓縮到 {}", dir.display()), false),
+                _ => message("解壓縮失敗。", true),
+            }
+        } else {
+            message("用法：LAN-KVM-Setup-0.2.exe --extract <資料夾>", true);
+        }
+        return;
+    }
+
     let is_admin = unsafe { IsUserAnAdmin() } != 0;
     if !is_admin {
         let exe = std::env::current_exe().unwrap_or_default();
@@ -126,15 +148,7 @@ fn main() {
             return;
         }
     };
-    let Some(source_dir) = exe.parent() else {
-        message("安裝程式路徑錯誤。", true);
-        return;
-    };
-    let app_source = source_dir.join("lankvm-app.exe");
-    if !app_source.exists() {
-        message("找不到 lankvm-app.exe，請把 setup.exe 和 app 放在同一個資料夾。", true);
-        return;
-    }
+    let _ = exe;
 
     quit_running_app();
 
@@ -174,60 +188,49 @@ fn main() {
     }
 
     let app_target = install_dir.join("lankvm-app.exe");
-    setup_log(&format!(
-        "install source={} target={}",
-        app_source.display(),
-        app_target.display()
-    ));
-    if let Err(err) = std::fs::copy(&app_source, &app_target) {
+    setup_log(&format!("install app target={}", app_target.display()));
+    if let Err(err) = std::fs::write(&app_target, APP_BYTES) {
         message(
             &format!(
-                "複製程式失敗（可能正在執行）：{err}\n請先從 UI 按「結束程式」再試一次。"
+                "寫入程式失敗（可能正在執行或被防毒鎖定）：{err}\n請先從系統匣結束 LAN-KVM 再試一次。"
             ),
             true,
         );
         return;
     }
+    setup_log(&format!("app bytes written: {}", APP_BYTES.len()));
 
     // The SYSTEM service is the client engine; it is what makes Winlogon and
-    // UAC injection possible. Copy it beside the app and install it.
-    let service_source = source_dir.join("lankvm-service.exe");
+    // UAC injection possible. It is embedded in this single setup.exe.
     let service_target = install_dir.join("lankvm-service.exe");
-    let service_ok = if service_source.exists() {
-        match std::fs::copy(&service_source, &service_target) {
-            Ok(_) => {
-                let config_dir = PathBuf::from("C:\\ProgramData\\LAN-KVM");
-                let _ = std::fs::create_dir_all(&config_dir);
-                let _ = std::fs::write(
-                    config_dir.join("config.txt"),
-                    "client_port=45872\nrelease_px=2\n",
-                );
-                // Wait for a previous service to be fully deleted.
-                for _ in 0..80 {
-                    let status = Command::new("sc.exe")
-                        .args(["query", "LAN-KVM"])
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .status();
-                    if status.map(|s| !s.success()).unwrap_or(true) {
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(250));
+    let service_ok = match std::fs::write(&service_target, SERVICE_BYTES) {
+        Ok(_) => {
+            setup_log(&format!("service bytes written: {}", SERVICE_BYTES.len()));
+            let config_dir = PathBuf::from("C:\\ProgramData\\LAN-KVM");
+            let _ = std::fs::create_dir_all(&config_dir);
+            let _ = std::fs::write(
+                config_dir.join("config.txt"),
+                "client_port=45872\nrelease_px=2\n",
+            );
+            // Wait for a previous service to be fully deleted.
+            for _ in 0..80 {
+                let status = Command::new("sc.exe")
+                    .args(["query", "LAN-KVM"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .status();
+                if status.map(|s| !s.success()).unwrap_or(true) {
+                    break;
                 }
-                let installed = run(
-                    &service_target.display().to_string(),
-                    &["install"],
-                );
-                setup_log(&format!("service install -> {installed}"));
-                installed
+                thread::sleep(Duration::from_millis(250));
             }
-            Err(err) => {
-                setup_log(&format!("service copy failed: {err}"));
-                false
-            }
+            let installed = run(&service_target.display().to_string(), &["install"]);
+            setup_log(&format!("service install -> {installed}"));
+            installed
         }
-    } else {
-        setup_log("lankvm-service.exe missing from package");
-        false
+        Err(err) => {
+            setup_log(&format!("service write failed: {err}"));
+            false
+        }
     };
 
     // Inbound UDP: discovery, control/pairing, input session.

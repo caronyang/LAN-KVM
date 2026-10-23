@@ -21,16 +21,17 @@
 ## 安裝版（v0.2-app）
 
 ```powershell
-# 兩台都執行（會跳 UAC；自動加防火牆、開機啟動、捷徑）
-dist-app\setup.exe
+# 單一安裝檔；內嵌 App 與 SYSTEM 服務
+dist-app\LAN-KVM-Setup-0.2.exe
 ```
 
-安裝後：
+安裝後常駐系統匣（Windows 11 可能在 `^` 裡，第一次拖到工作列固定）：
 
-1. A 開啟 LAN-KVM 捷徑 → 重新掃描 → 選 B → 配對。
-2. B 會自動開 UI 顯示 3 位數；在 A 輸入。
-3. 配對後自動連線；之後開機自動連，直到解除配對。
-4. A 的 UI 可設定 B 在左／右與切換門檻。
+1. 左鍵匣圖示 → 開啟設定。
+2. A 重新掃描 → 選 B → 配對。
+3. B 會自動開 UI 顯示 3 位數；在 A 輸入。
+4. 配對後自動連線；之後開機自動連，直到解除配對。
+5. 右鍵選單：停止/重新連線、重新掃描、收集紀錄、結束。
 
 詳細說明與限制見 [`docs/11-app-installer.md`](docs/11-app-installer.md)、[`dist-app/README.txt`](dist-app/README.txt)。
 

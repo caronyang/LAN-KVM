@@ -19,5 +19,10 @@ lankvm-net = { path = "../lankvm-net" }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
     "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
 ] }
+
+[build-dependencies]
+winres = "0.1"

@@ -1,15 +1,15 @@
-#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+﻿#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod engine;
 mod http;
 mod logs;
 mod net;
 mod state;
+mod tray;
 
 use std::net::TcpStream;
 use std::process::Command;
 use std::sync::Arc;
-use std::time::Duration;
 
 pub const DEFAULT_HTTP_PORT: u16 = 45_880;
 pub const DEFAULT_CONTROL_PORT: u16 = 45_871;
@@ -103,17 +103,18 @@ fn main() {
         app.log(format!("network start failed: {err:#}"));
     }
 
+    let server_app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(err) = http::serve(server_app.clone(), http_port) {
+            server_app.log(format!("UI server failed: {err:#}"));
+        }
+    });
+
     if !silent {
         open_browser(&url);
     }
 
-    if let Err(err) = http::serve(app.clone(), http_port) {
-        app.log(format!("UI server failed: {err:#}"));
-        if !silent {
-            open_browser(&url);
-        }
-        std::thread::sleep(Duration::from_secs(2));
-    }
+    tray::run(app);
 }
 
 pub fn open_browser(url: &str) {
