@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 use std::io::{self, Read};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 
 use anyhow::{Context, Result};
 use lankvm_platform::windows as win;
@@ -15,18 +15,38 @@ use lankvm_platform::windows as win;
 use crate::logger::log;
 use crate::remote_inject;
 
-pub fn run(port: u16) -> Result<()> {
+pub fn run(port: u16, parent_pid: u32) -> Result<()> {
     log(
         "session",
         format!("winjector: listening port={port} (process desktop should be Winlogon)"),
     );
 
+    if parent_pid != 0 {
+        std::thread::spawn(move || watch_parent(parent_pid));
+    }
+
     let listener = TcpListener::bind(("127.0.0.1", port))
         .with_context(|| format!("winjector bind 127.0.0.1:{port}"))?;
-    let (mut stream, _) = listener.accept().context("winjector accept")?;
-    let _ = stream.set_nodelay(true);
-    log("session", "winjector: agent connected");
 
+    loop {
+        let (mut stream, _) = match listener.accept() {
+            Ok(value) => value,
+            Err(err) => {
+                log("session", format!("winjector: accept failed: {err}"));
+                break;
+            }
+        };
+        let _ = stream.set_nodelay(true);
+        log("session", "winjector: agent connected");
+        process_connection(&mut stream);
+        log("session", "winjector: agent disconnected");
+    }
+
+    log("session", "winjector: stopped");
+    Ok(())
+}
+
+fn process_connection(stream: &mut TcpStream) {
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
     let mut frame = [0u8; 16];
     let mut failures = 0u32;
@@ -95,12 +115,30 @@ pub fn run(port: u16) -> Result<()> {
     }
 
     release_keys(&mut pressed);
-    log("session", "winjector: stopped");
-    Ok(())
 }
 
 fn release_keys(pressed: &mut HashSet<(u16, bool)>) {
     for (scan, extended) in pressed.drain() {
         let _ = win::key_scancode(scan, false, extended);
+    }
+}
+
+#[cfg(windows)]
+fn watch_parent(parent_pid: u32) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, INFINITE,
+    };
+
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+
+    unsafe {
+        let handle = OpenProcess(SYNCHRONIZE, 0, parent_pid);
+        if handle.is_null() {
+            std::process::exit(0);
+        }
+        WaitForSingleObject(handle, INFINITE);
+        CloseHandle(handle);
+        std::process::exit(0);
     }
 }

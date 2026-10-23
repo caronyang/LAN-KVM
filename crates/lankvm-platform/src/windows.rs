@@ -40,11 +40,11 @@ use windows_sys::Win32::UI::HiDpi::{
     MDT_EFFECTIVE_DPI,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-    KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL,
-    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
-    MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK,
-    MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSEINPUT,
+    keybd_event, SendInput, INPUT, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT,
+    KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MOUSEEVENTF_ABSOLUTE,
+    MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
+    MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+    MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSEINPUT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, ClipCursor, DispatchMessageW, GetCursorPos, GetMessageW, GetSystemMetrics,
@@ -562,6 +562,26 @@ pub fn wheel(delta: i32, horizontal: bool) -> bool {
 }
 
 pub fn key_scancode(scan: u16, down: bool, extended: bool) -> bool {
+    // Num Lock / Caps Lock / Scroll Lock are toggle keys. SendInput with only
+    // a scan code does not update the toggle state (verified on Windows 11);
+    // keybd_event with the virtual key does. Keep the scan code for the target
+    // layout, but drive the toggle through the VK path.
+    let toggle = match scan {
+        0x45 => Some(0x90u8), // Num Lock
+        0x3A => Some(0x14u8), // Caps Lock
+        0x46 => Some(0x91u8), // Scroll Lock
+        _ => None,
+    };
+    if let Some(vk) = toggle {
+        // extended is intentionally ignored for these three keys.
+        let _ = extended;
+        let flags = if down { 0 } else { KEYEVENTF_KEYUP };
+        unsafe {
+            keybd_event(vk, scan as u8, flags, 0);
+        }
+        return true;
+    }
+
     let mut flags = KEYEVENTF_SCANCODE;
     if !down {
         flags |= KEYEVENTF_KEYUP;

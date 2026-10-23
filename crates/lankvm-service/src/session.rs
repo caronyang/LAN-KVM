@@ -103,6 +103,36 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     let mut winjector_retry = Instant::now();
     let mut winjector_connect_retry = Instant::now();
 
+    if client {
+        // Start the Winlogon helper early so locking the desktop does not
+        // spend 1-2 seconds creating a process. It stays idle on Winlogon
+        // until input is routed there.
+        match start_winjector() {
+            Ok(started) => {
+                log(
+                    "session",
+                    format!("winjector prestarted pid={}", started.pid),
+                );
+                winjector = Some(started);
+                match connect_winjector() {
+                    Ok(stream) => {
+                        remote_inject::attach(stream);
+                        log("session", "winjector attached (idle until Winlogon)");
+                    }
+                    Err(err) => {
+                        log("session", format!("winjector prestart connect failed: {err:#}"));
+                    }
+                }
+            }
+            Err(err) => {
+                log(
+                    "session",
+                    format!("winjector prestart failed (retry on Winlogon): {err:#}"),
+                );
+            }
+        }
+    }
+
     loop {
         if seconds > 0 && started.elapsed() >= Duration::from_secs(seconds) {
             break;
@@ -164,6 +194,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
                                         format!("winjector started pid={}", started.pid),
                                     );
                                     winjector = Some(started);
+                                    winjector_connect_retry = Instant::now();
                                 }
                                 Err(err) => {
                                     log("session", format!("winjector start failed: {err:#}"));
@@ -171,16 +202,13 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
                                 }
                             }
                         }
-                        if !remote_inject::is_active()
+                        if !remote_inject::connected()
                             && Instant::now() >= winjector_connect_retry
                         {
                             match connect_winjector() {
                                 Ok(stream) => {
-                                    remote_inject::set(stream);
-                                    log(
-                                        "session",
-                                        "winjector connected; routing input to Winlogon helper",
-                                    );
+                                    remote_inject::attach(stream);
+                                    log("session", "winjector connected");
                                 }
                                 Err(err) => {
                                     log("session", format!("winjector connect failed: {err:#}"));
@@ -189,14 +217,14 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
                                 }
                             }
                         }
+                        if remote_inject::connected() && !remote_inject::is_active() {
+                            remote_inject::enable();
+                            log("session", "winjector enabled (Winlogon)");
+                        }
                     } else {
                         if remote_inject::is_active() {
-                            remote_inject::clear();
-                            log("session", "winjector disconnected (left Winlogon)");
-                        }
-                        if let Some(mut old) = winjector.take() {
-                            old.stop();
-                            log("session", "winjector stopped");
+                            remote_inject::disable();
+                            log("session", "winjector disabled (left Winlogon)");
                         }
                         winjector_retry = Instant::now();
                         winjector_connect_retry = Instant::now();
@@ -280,9 +308,10 @@ fn start_winjector() -> Result<Winjector> {
     let exe = std::env::current_exe()?;
     let exe_wide = to_wide(exe.as_os_str());
     let command = format!(
-        "\"{}\" winjector --port {}",
+        "\"{}\" winjector --port {} --parent-pid {}",
         exe.display(),
-        remote_inject::PORT
+        remote_inject::PORT,
+        std::process::id()
     );
     let mut command_wide = to_wide(&command);
     let mut desktop_wide = to_wide("winsta0\\Winlogon");

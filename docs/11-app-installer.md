@@ -180,12 +180,19 @@ Winlogon: inject failed kind=Motion streak=1 err=存取被拒 (os error 5)
 結論：**把 injector thread attach 到 Winlogon、UIAccess=true 都還不夠**；`SendInput` 在 secure desktop 仍被拒。自動 Release 會讓登入畫面完全無法測試，已移除。
 
 目前修正（helper process）：
-- 在 Winlogon 時，另外建立 `lankvm-service.exe winjector --port 45874`，以 `lpDesktop = winsta0\Winlogon` 啟動，**process 一开始就在 secure desktop**。
-- 輸入事件由本機 TCP 45874 轉給 helper，由 helper 的 main thread 執行 `SendInput`。
-- 只在 Winlogon 使用；Default 仍走原本的 injector（正常）。
-- helper 的 log：`winjector: listening`、`winjector: agent connected`、`winjector: SendInput failed kind=... err=...`。
+- 在 session agent 啟動時就預先建立 `lankvm-service.exe winjector --port 45874`，以 `lpDesktop = winsta0\Winlogon` 啟動，**process 一开始就在 secure desktop**，且**保持常駐**。
+- 輸入事件透過 loopback TCP 45874 轉給 helper；Default 時只 disable 路由，不重建 process。
+- 鎖定時只 enable 路由，避免 1–2 秒的 process 建立/連線空窗。
+- Default 桌面仍走原本的 injector（正常）。
+- helper 的 log：`winjector: listening`、`winjector: agent connected`、`winjector: enabled (Winlogon)`、`winjector: SendInput failed kind=... err=...`。
 
-> 待實機驗證：鎖定後點密碼欄位，`inject_fail` 應保持 0，且 `session.log` 出現 `winjector connected`。若 helper 仍 err=5，代表 secure desktop 還需要簽章/UIAccess 的正式憑證，log 會直接顯示。
+> 2026-10-23 晚實機：密碼欄位已可點擊並解鎖，但切換時有 1–2 秒卡頓；本版已改預啟動/常駐連線。
+
+### 5.2 Num Lock / 數字鍵盤
+
+- Num Lock、Caps Lock、Scroll Lock 是 toggle key；用 scan code 的 `SendInput` **不會更新 toggle 狀態**。
+- 已改為 `keybd_event` 的 virtual key 路徑（Num=0x90、Caps=0x14、Scroll=0x91），scan 仍保留給一般鍵。
+- 本機以服務 agent + Switch 封包驗證 Num Lock 會切換；數字鍵盤需 Num Lock 開啟後才有數字。
 
 ---
 
@@ -193,7 +200,7 @@ Winlogon: inject failed kind=Motion streak=1 err=存取被拒 (os error 5)
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.2.exe   30093F2E48ABC5A09334EC20C5B96D16639304F69FB78A902473B41FC7698506
+  LAN-KVM-Setup-0.2.exe   ED8004C8B91CDE751EF28606433146ACE54B1CCAEC4A083341F938BBD5D655DC
   README.txt
 ```
 

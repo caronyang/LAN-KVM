@@ -55,14 +55,16 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 - B 的 client 注入由 SYSTEM 服務執行，所以 B 按 Win+L 或跳 UAC 時，
   仍然可以用 A 的鍵鼠操作。
 - 這一版把 Winlogon 注入改成獨立 helper process（`lpDesktop = winsta0\Winlogon`），
-  不再依賴 thread attach；log 會出現 `winjector connected`。
-- **第一次測試請在 B 暫時接一個鍵盤**，若仍有問題才能解鎖/重開；確認
+  且在服務啟動時就預先建立、連線常駐；鎖定時只切換路由，不再有 1–2 秒卡頓。
+- log 會出現 `winjector prestarted`、`winjector attached (idle)`、`winjector enabled (Winlogon)`。
+- **第一次測試仍建議在 B 暫時接一個鍵盤**，若仍有問題才能解鎖/重開；確認
   `inject_fail=0` 後就可以移除。
 - 相關 log：
-  winjector: listening / agent connected / stopped
+  winjector: listening / agent connected / enabled (Winlogon)
   winjector: SendInput failed kind=... err=...
   Winlogon: input counts ... inject_fail=...
 - 若卡住，A 可按 `Ctrl+Alt+Shift+Q` 強制取回（不會自動跳回，方便你測密碼欄位）。
+- Num Lock / Caps Lock / Scroll Lock 已改用 virtual key 注入；數字鍵盤需 Num Lock 開啟。
 - 若 UI 或系統匣顯示「client 服務未就緒」，請確認：
   sc query LAN-KVM
   服務必須是 RUNNING；必要時以管理員執行 sc start LAN-KVM。

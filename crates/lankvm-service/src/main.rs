@@ -39,14 +39,23 @@ fn main() -> std::process::ExitCode {
             Some("session") => session::run(args),
             Some("winjector") => {
                 let mut port = remote_inject::PORT;
+                let mut parent_pid = 0u32;
                 while let Some(arg) = args.next() {
-                    if arg == "--port" {
-                        if let Some(value) = args.next() {
-                            port = value.parse().unwrap_or(port);
+                    match arg.as_str() {
+                        "--port" => {
+                            if let Some(value) = args.next() {
+                                port = value.parse().unwrap_or(port);
+                            }
                         }
+                        "--parent-pid" => {
+                            if let Some(value) = args.next() {
+                                parent_pid = value.parse().unwrap_or(0);
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                winjector::run(port)
+                winjector::run(port, parent_pid)
             }
             Some("install") => service::install(),
             Some("uninstall") => service::uninstall(),

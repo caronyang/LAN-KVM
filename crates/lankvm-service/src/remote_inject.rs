@@ -7,25 +7,46 @@
 
 use std::io::Write;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use crate::inject::InjectEvent;
 
 static STREAM: Mutex<Option<TcpStream>> = Mutex::new(None);
+static ENABLED: AtomicBool = AtomicBool::new(false);
 
-pub fn set(stream: TcpStream) {
+/// Keep the connection open but do not route input yet.
+pub fn attach(stream: TcpStream) {
     if let Ok(mut slot) = STREAM.lock() {
         *slot = Some(stream);
     }
+    ENABLED.store(false, Ordering::SeqCst);
+}
+
+pub fn enable() {
+    ENABLED.store(true, Ordering::SeqCst);
+}
+
+pub fn disable() {
+    ENABLED.store(false, Ordering::SeqCst);
 }
 
 pub fn clear() {
+    ENABLED.store(false, Ordering::SeqCst);
     if let Ok(mut slot) = STREAM.lock() {
         *slot = None;
     }
 }
 
 pub fn is_active() -> bool {
+    ENABLED.load(Ordering::SeqCst)
+        && STREAM
+            .lock()
+            .map(|slot| slot.is_some())
+            .unwrap_or(false)
+}
+
+pub fn connected() -> bool {
     STREAM
         .lock()
         .map(|slot| slot.is_some())
@@ -33,6 +54,9 @@ pub fn is_active() -> bool {
 }
 
 pub fn send(event: &InjectEvent) -> bool {
+    if !ENABLED.load(Ordering::SeqCst) {
+        return false;
+    }
     let Ok(mut guard) = STREAM.lock() else {
         return false;
     };
@@ -44,6 +68,7 @@ pub fn send(event: &InjectEvent) -> bool {
         true
     } else {
         *guard = None;
+        ENABLED.store(false, Ordering::SeqCst);
         false
     }
 }
