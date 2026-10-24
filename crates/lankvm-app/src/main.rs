@@ -1,5 +1,6 @@
 ﻿#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod clipboard_sync;
 mod engine;
 mod http;
 mod logs;
@@ -102,6 +103,8 @@ fn main() {
     ) {
         app.log(format!("network start failed: {err:#}"));
     }
+
+    clipboard_sync::start(app.clone());
 
     let server_app = app.clone();
     std::thread::spawn(move || {

@@ -249,6 +249,7 @@ fn main() {
     firewall_ok &= firewall_rule("LAN-KVM Control", 45871);
     firewall_ok &= firewall_rule("LAN-KVM Data", 45872);
     firewall_ok &= firewall_rule_tcp("LAN-KVM Logs", 45873);
+    firewall_ok &= firewall_rule_tcp("LAN-KVM Clipboard", 45875);
     setup_log(&format!("firewall_ok={firewall_ok}"));
 
     // Belt and braces for boot: if SCM does not start the service for any
@@ -362,9 +363,9 @@ fn main() {
         .status();
 
     let firewall_note = if firewall_ok {
-        "已自動加入防火牆規則（UDP 45870/45871/45872）。"
+        "已自動加入防火牆規則（UDP 45870/45871/45872、TCP 45873/45875）。"
     } else {
-        "注意：防火牆規則建立失敗。請用管理員 PowerShell 手動加 UDP 45870-45872，或洽 IT。"
+        "注意：防火牆規則建立失敗。請用管理員 PowerShell 手動加 UDP 45870-45872 與 TCP 45873/45875，或洽 IT。"
     };
     let service_note = if service_ok {
         "SYSTEM 服務已安裝並啟動（支援登入畫面/UAC）。"

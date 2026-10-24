@@ -9,7 +9,7 @@ use std::io;
 use std::mem::{size_of, zeroed};
 use std::net::{SocketAddr, UdpSocket};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -64,6 +64,7 @@ static MAIN_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 static LAST_PONG_MS: AtomicU64 = AtomicU64::new(0);
 static REMOTE_MOTION: AtomicU64 = AtomicU64::new(0);
 static CURSOR_HIDDEN: AtomicBool = AtomicBool::new(false);
+static CURSOR_HIDER: AtomicIsize = AtomicIsize::new(0);
 static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
 static RELEASE_REASON: AtomicU32 = AtomicU32::new(0);
 static START: OnceLock<Instant> = OnceLock::new();
@@ -775,28 +776,45 @@ fn do_switch(cursor: Point, bounds: Rect) {
             as u16
     };
     let entry_edge = if edge == Edge::Right { 1 } else { 2 };
+    // Keep the real cursor pinned to a single pixel at the edge; without this
+    // it slides up/down along the full-height clip while operating the peer.
     let clip = Rect::from_xywh(
         if edge == Edge::Right {
             bounds.right - 1
         } else {
             bounds.left
         },
-        bounds.top,
+        cursor.y.clamp(bounds.top, bounds.bottom.saturating_sub(1)),
         1,
-        bounds.height().max(1),
+        1,
     );
 
     win::clip_to(clip);
     win::set_cursor_visible(false);
+    let hider = win::create_cursor_hider(bounds);
+    if let Some(hwnd) = hider {
+        CURSOR_HIDER.store(hwnd as isize, Ordering::SeqCst);
+    }
     CURSOR_HIDDEN.store(true, Ordering::SeqCst);
     LAST_PONG_MS.store(now_ms(), Ordering::SeqCst);
     send_event(Event::Switch { ratio, entry_edge });
 
     plog!(
-        "[master] remote control ON ({:?} edge, entry ratio {})",
+        "[master] remote control ON ({:?} edge, entry ratio {}, cursor hider {})",
         edge,
-        ratio
+        ratio,
+        if hider.is_some() { "on" } else { "failed" }
     );
+}
+
+fn restore_cursor() {
+    let hwnd = CURSOR_HIDER.swap(0, Ordering::SeqCst);
+    if hwnd != 0 {
+        win::destroy_cursor_hider(hwnd as HWND);
+    }
+    if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) {
+        win::set_cursor_visible(true);
+    }
 }
 
 fn do_release(reason: &'static str) {
@@ -805,9 +823,7 @@ fn do_release(reason: &'static str) {
     }
     send_event(Event::Release { reason });
     win::release_clip();
-    if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) {
-        win::set_cursor_visible(true);
-    }
+    restore_cursor();
 
     // A detector that has fired stays fired until reset; without this the
     // second edge crossing (and every one after it) would be ignored.
@@ -902,8 +918,6 @@ struct CursorGuard;
 impl Drop for CursorGuard {
     fn drop(&mut self) {
         win::release_clip();
-        if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) {
-            win::set_cursor_visible(true);
-        }
+        restore_cursor();
     }
 }

@@ -16,7 +16,7 @@ use anyhow::{anyhow, Result};
 use lankvm_core::{MonitorInfo, Point, Rect};
 
 use windows_sys::core::BOOL;
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW,
 };
@@ -47,14 +47,17 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSEINPUT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, ClipCursor, DispatchMessageW, GetCursorPos, GetMessageW, GetSystemMetrics,
-    PostThreadMessageW, SetCursorPos, SetWindowsHookExW, ShowCursor, TranslateMessage,
-    UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED,
-    LLMHF_INJECTED, MONITORINFOF_PRIMARY, MSG, MSLLHOOKSTRUCT, SM_CXVIRTUALSCREEN,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, WH_KEYBOARD_LL, WH_MOUSE_LL,
-    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
+    CallNextHookEx, ClipCursor, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    GetCursorPos, GetMessageW, GetSystemMetrics, PostThreadMessageW, RegisterClassW, SetCursor,
+    SetCursorPos, SetLayeredWindowAttributes, SetWindowPos, SetWindowsHookExW, ShowCursor,
+    ShowWindow, TranslateMessage, UnhookWindowsHookEx, HC_ACTION, HWND_TOPMOST, KBDLLHOOKSTRUCT,
+    LLKHF_EXTENDED, LLKHF_INJECTED, LLMHF_INJECTED, LWA_ALPHA, MONITORINFOF_PRIMARY, MSG,
+    MSLLHOOKSTRUCT, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WH_MOUSE_LL,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SETCURSOR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
+    WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::ProbeReport;
@@ -628,6 +631,90 @@ pub fn set_cursor_visible(visible: bool) {
             }
         }
     }
+}
+
+/// Full-screen, topmost, click-blocking (but visually transparent) window used
+/// while the master is controlling a peer. Its class has no cursor and
+/// WM_SETCURSOR returns an empty cursor, which reliably hides the system
+/// cursor on the master. Destroying the window restores normal interaction.
+pub fn create_cursor_hider(bounds: Rect) -> Option<HWND> {
+    unsafe {
+        let instance = GetModuleHandleW(null());
+        let class_name = to_wide("LankvmCursorHider");
+        let window_name = to_wide("LAN-KVM");
+        let class = WNDCLASSW {
+            style: 0,
+            lpfnWndProc: Some(cursor_hider_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: instance,
+            hIcon: null_mut(),
+            hCursor: null_mut(),
+            hbrBackground: null_mut(),
+            lpszMenuName: null(),
+            lpszClassName: class_name.as_ptr(),
+        };
+        RegisterClassW(&class);
+
+        let hwnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            class_name.as_ptr(),
+            window_name.as_ptr(),
+            WS_POPUP,
+            bounds.left,
+            bounds.top,
+            bounds.width().max(1),
+            bounds.height().max(1),
+            null_mut(),
+            null_mut(),
+            instance,
+            null_mut(),
+        );
+        if hwnd.is_null() {
+            return None;
+        }
+        SetLayeredWindowAttributes(hwnd, 0, 1, LWA_ALPHA);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+        SetCursor(null_mut());
+        Some(hwnd)
+    }
+}
+
+pub fn destroy_cursor_hider(hwnd: HWND) {
+    if !hwnd.is_null() {
+        unsafe {
+            DestroyWindow(hwnd);
+        }
+    }
+}
+
+unsafe extern "system" fn cursor_hider_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match message {
+        WM_SETCURSOR => {
+            SetCursor(null_mut());
+            1
+        }
+        WM_ERASEBKGND => 1,
+        _ => DefWindowProcW(hwnd, message, wparam, lparam),
+    }
+}
+
+fn to_wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 pub fn clip_to(rect: Rect) {

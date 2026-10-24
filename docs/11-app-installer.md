@@ -240,11 +240,12 @@ Log：
 
 ```
 dist-app/
+  LAN-KVM-Setup-0.3-clip.exe     D8CE52A01DB1C051B3B24026D43C540C13E6EE5B1A1A7FBE47513848FBD734CA
   LAN-KVM-Setup-0.2-login3.exe   8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
   README.txt
 ```
 
-> `LAN-KVM-Setup-0.2.exe`（5680）是上一個測試版；`-login` 版多了登入頁 session/桌面 fallback 與啟動診斷。若安裝程式正在執行，請先完成或關閉，再用 `-login` 版。
+> `0.3-clip` 是目前測試版：多了跨機剪貼簿（TCP 45875，文字/圖片/檔案）與控制端游標隱藏（透明 overlay + 1×1 ClipCursor）。`0.2-login3` 為已驗收的登入頁版本，保留供對照。
 
 建置（順序很重要，setup 會 `include_bytes!` 前一步的產物）：
 

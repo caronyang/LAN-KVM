@@ -342,9 +342,11 @@ name = "lankvm-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "lankvm-clipboard",
  "lankvm-core",
  "lankvm-net",
  "lankvm-platform",
+ "postcard",
  "serde",
  "serde_json",
  "socket2",

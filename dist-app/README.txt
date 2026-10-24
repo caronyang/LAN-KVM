@@ -1,7 +1,7 @@
-LAN-KVM 0.2（測試版）
+LAN-KVM 0.3（測試版）
 =====================
 
-這是一個**單一安裝檔**：LAN-KVM-Setup-0.2-login3.exe
+這是一個**單一安裝檔**：LAN-KVM-Setup-0.3-clip.exe
 App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 
 需求
@@ -12,9 +12,9 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝
 ----
 1. 建議先從系統匣右鍵「停止連線」再安裝（避免升級時中斷遠端控制）。
-2. 執行 LAN-KVM-Setup-0.2-login3.exe（會跳 UAC，按「是」）。
+2. 執行 LAN-KVM-Setup-0.3-clip.exe（會跳 UAC，按「是」）。
 3. 安裝到 C:\Program Files\LAN-KVM，並自動：
-   - 建立防火牆規則：UDP 45870 / 45871 / 45872、TCP 45873（log 回傳）
+   - 建立防火牆規則：UDP 45870 / 45871 / 45872、TCP 45873（log 回傳）、TCP 45875（剪貼簿）
    - 安裝並啟動 LAN-KVM SYSTEM 服務（登入畫面 / UAC），session agent 不顯示 console
    - 設定開機自動啟動（--silent）
    - 建立桌面與開始功能表捷徑
@@ -49,6 +49,27 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 - 把游標推回 B 的進入邊界（越界 2px）→ 控制權回到 A。
 - B 自己的滑鼠/鍵盤不會改變連線狀態（設計如此）。
 - 門檻可調：切入推力 px、時間窗 ms、回切越界 px。
+- 控制 B 時，**A 的游標會消失**（全螢幕透明 overlay + 1×1 ClipCursor），
+  不會再看到游標沿螢幕邊緣上下移動；回切時立即恢復。
+- 緊急取回：`Ctrl+Alt+Shift+Q`。
+
+跨機剪貼簿
+----------
+- 任一台複製**文字 / 圖片 / 檔案**，另一台直接貼上。
+- 傳輸：TCP 45875（只有 client 端監聽、master 端主動連線），雙向。
+- 連線建立時，master 會先送一次目前剪貼簿，之後兩邊只要剪貼簿變更就送。
+- 檔案會先複製到 `%LOCALAPPDATA%\LAN-KVM\clipboard\<時間>\`，
+  再以「檔案」形式放進對方剪貼簿；上限：單次 128 MB、200 個檔案。
+- 舊的暫存檔會在 2 天後自動清除。
+- 回音抑制：套用對方內容後 1.5 秒內不往回送，並以內容指紋比對，
+  不會出現兩台互丟同一份內容的迴圈。
+- log（app.log）：
+  clipboard listening on TCP 45875
+  clipboard link up with <對方> (id)
+  clipboard sent: text (12 chars) / image 640x480 (…) / files (2)
+  clipboard received: …
+- 注意：剪貼簿是「使用者工作階段」資源，**兩台都要登入 Windows**
+  （B 停在登入頁時只有鍵鼠可用，剪貼簿要等登入後才會同步）。
 
 登入畫面 / UAC
 --------------
@@ -115,7 +136,7 @@ B 先開機 / IP 變更
    "C:\Program Files\LAN-KVM\lankvm-service.exe" uninstall
 3. 刪除 C:\Program Files\LAN-KVM。
 4. 刪除登錄檔 HKCU\Software\Microsoft\Windows\CurrentVersion\Run 的 LAN-KVM。
-5. 刪除防火牆規則：LAN-KVM Discovery / Control / Data。
+5. 刪除防火牆規則：LAN-KVM Discovery / Control / Data / Logs / Clipboard。
 6. 刪除桌面與開始功能表的 LAN-KVM 捷徑。
 
 目前限制
@@ -138,5 +159,5 @@ B 先開機 / IP 變更
   2. 登入 B 後 `sc query LAN-KVM` 必須 RUNNING。
   3. `service.log` 要有 `identity announce`、`started session agent`；
      `session.log` 要有 `session agent started`、`winjector prestarted`。
-  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-0.2-login.exe`。
+  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-0.3-clip.exe`。
 - 安裝失敗：看 %TEMP%\lankvm-setup.log。
