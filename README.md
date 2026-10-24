@@ -1,179 +1,131 @@
 # LAN-KVM
 
-軟體式 KVM：在同一個網段的 2–3 台電腦之間共用一組鍵盤/滑鼠，支援無縫邊界切換、剪貼簿共享與檔案傳輸。目標平台為 Windows / macOS / Linux，目前只有 Windows 可實測。
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.0.0-2ea44f?style=flat-square)
+![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
-> 目前狀態：**v0.4 測試版（Inno Setup 安裝程式 + 中英文介面）**。v0.2 已完成兩台實機驗收（2026-10-23）：UDP 握手/邊界切換、Raw Input、絕對游標、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入、單一安裝檔、系統匣、區網探索、3 位數配對、開機自動連線、瀏覽器 UI。**B 先開機停在登入頁時，A 可直接操作 B 登入**。v0.3 新增：任一台複製文字/圖片/檔案、另一台可貼上（TCP 45875），以及控制期間 master 游標真正消失（透明 overlay + 1×1 ClipCursor）。v0.4：UI 與系統匣中英文、Inno Setup 標準安裝/解除安裝。完整成果見 [`docs/12-stage-summary.md`](docs/12-stage-summary.md)、[`docs/13-clipboard-and-cursor.md`](docs/13-clipboard-and-cursor.md)、[`docs/14-bilingual-and-inno.md`](docs/14-bilingual-and-inno.md)。
+**English** | [繁體中文](README.zh-TW.md)
 
-## 文件
+Software KVM for Windows: share one keyboard and mouse across 2–3 computers on the same LAN.
+Move the pointer past the screen edge, and the other machine takes over — including the
+Windows sign-in screen and UAC prompts. Clipboard (text / image / files) is shared in both
+directions, and the controlling machine's cursor disappears while the peer is in control.
 
-- [技術選型評估 v0.1](docs/01-tech-selection.md)
-- [架構決策與修訂 v0.2](docs/02-decisions-and-architecture.md)
-- [P0 PoC 使用說明](docs/03-p0-usage.md)
-- [P0 兩台實機測試結果](docs/05-p0-results.md)
-- [服務 + 登入畫面 PoC](docs/06-service-login-poc.md)
-- [v0.1-local 單機驗證](docs/07-local-verification.md)
-- [研發歷程與接手說明](docs/08-development-history.md)
-- [新場域測試計畫（Gate 0–5）](docs/09-next-test-plan.md)
-- [v0.2 安裝版 App（探索/配對/自動連線）](docs/11-app-installer.md)
-- [v0.2 階段成果：兩台實機驗收完成](docs/12-stage-summary.md)
-- [跨機剪貼簿與控制端游標隱藏（v0.3-clip）](docs/13-clipboard-and-cursor.md)
-- [中英文介面與 Inno Setup 安裝程式（v0.4）](docs/14-bilingual-and-inno.md)
-- [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
-- [Logo 與品牌資產](assets/branding/gallery.html)（規範：`assets/branding/README.md`）
+> **Status: v1.0.0 — first public release.** Verified on two Windows 11 machines
+> (laptop + desktop on the same Wi-Fi): edge switching, sign-in-screen control,
+> Num Lock, boot auto-start, and bidirectional clipboard for text, screenshots and files.
 
-## 安裝版（v0.4-inno）
+---
 
-```powershell
-# Inno Setup 標準安裝程式；內含 App 與 SYSTEM 服務（中英文安裝精靈）
-dist-app\LAN-KVM-Setup-0.4-inno.exe
+## Features
 
-# SHA-256
-# 5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA
+- **Seamless edge switching** — push the pointer past the configured side; the peer takes over.
+  Push back to the entry edge to return. Push distance, time window and return overshoot are adjustable.
+- **Works at the sign-in screen and UAC** — the client side runs a LocalSystem service plus a
+  `winsta0\Winlogon` helper process, so you can click the password field and type on a machine
+  that is still logged out.
+- **Bidirectional clipboard** — copy text, images or files on either machine and paste on the other
+  (TCP 45875, echo-suppressed, files land in `%LOCALAPPDATA%\LAN-KVM\clipboard\`).
+- **Auto discovery and pairing** — LAN discovery, 3-digit pairing code, persistent IDs. Boot order
+  and DHCP changes are handled automatically.
+- **Auto start** — service starts at boot, tray app starts at sign-in, reconnects on its own.
+- **Bilingual UI** — English by default, switchable to 繁體中文 in the app; the tray menu follows
+  the same setting.
+- **One-click diagnostics** — collect logs from both machines into one folder.
+- **No black console windows**, no drivers, no extra hardware.
+
+## Requirements
+
+| | |
+|---|---|
+| OS | Windows 10 / 11 x64 |
+| Network | Both machines on the same LAN / subnet |
+| Install | Administrator rights (service + firewall rules) |
+| Clipboard | Both machines must be signed in (clipboard is per user session) |
+
+## Install
+
+Download the latest installer from **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)**:
+
+```
+LAN-KVM-Setup-1.0.0.exe
 ```
 
-> `0.4-inno` 是目前正式測試版：改用 Inno Setup，支援標準「新增/移除程式」、
-> 升級、`/SILENT`、安裝記錄；UI 可在右上角切換 **中文 / English**（預設跟隨系統語系）。
->
-> 上一版自製 setup 保留為 `dist-app\LAN-KVM-Setup-0.3-clip3.exe`
-> （`5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1`），
-> 內容相同但沒有標準卸載流程。
->
-> v0.2 已驗收的登入頁版本保留為 `dist-app\LAN-KVM-Setup-0.2-login3.exe`
-> （`8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3`）。
+Run it (UAC → Yes), choose English or 繁體中文, then:
 
-建置安裝程式：
+1. Open LAN-KVM on machine **A** (tray icon → Open settings).
+2. Rescan and pick machine **B** → **Pair**.
+3. **B** shows a 3-digit code; type it on **A**.
+4. Done — move the pointer past the screen edge configured in the UI.
+
+The installer creates the service, firewall rules, boot tasks, shortcuts, and the sign-in
+auto-start entry. Uninstall from Windows *Settings → Apps*.
+
+Silent install for IT deployment:
+
+```powershell
+LAN-KVM-Setup-1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+## How it works
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 45870 | UDP | Discovery / pairing |
+| 45871 | UDP | Control (switch, release, keepalive) |
+| 45872 | UDP | Input events (mouse/keyboard) |
+| 45873 | TCP | Log collection |
+| 45875 | TCP | Clipboard sync |
+| 45880 | TCP (loopback) | Browser UI / local API |
+
+- **Master** = the machine with the physical keyboard/mouse; **client** = the machine being controlled.
+- The client's input injection runs in a SYSTEM service so it survives the lock screen.
+- Clipboard uses a small length-prefixed postcard protocol; the client listens and the master connects.
+
+## Build from source
+
+Prerequisites: Rust 1.80+, Visual Studio Build Tools (MSVC), Inno Setup 6.7+ (installer only).
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.0.0.exe
 ```
 
-細節見 [`docs/14-bilingual-and-inno.md`](docs/14-bilingual-and-inno.md)。
-
-安裝後常駐系統匣（Windows 11 可能在 `^` 裡，第一次拖到工作列固定）：
-
-1. 左鍵匣圖示 → 開啟設定。
-2. A 重新掃描 → 選 B → 配對。
-3. B 會自動開 UI 顯示 3 位數；在 A 輸入。
-4. 配對後自動連線；之後開機自動連，直到解除配對。
-5. 右鍵選單：停止/重新連線、重新掃描、收集紀錄、結束。
-
-詳細說明與限制見 [`docs/11-app-installer.md`](docs/11-app-installer.md)、[`dist-app/README.txt`](dist-app/README.txt)。
-
-## 快速開始（單機）
+Local checks:
 
 ```powershell
-# 先建置（Apex One 會刪 release/dev-fast service；用 debug）
-cargo build -p lankvm-devtools -p lankvm-service -p lankvm-agent
-
-# 一次跑完 probe / clipboard / file 測試
+cargo test --workspace
+cargo build -p lankvm-devtools
 .\dist\run-local-tests.ps1
 ```
 
-`abs-test` 請在滑鼠靜止、service 停止時手動跑：
+## Documentation
 
-```powershell
-.\dist\lankvm-devtools.exe abs-test
-```
+- [Architecture decisions (v0.2)](docs/02-decisions-and-architecture.md)
+- [P0 PoC usage](docs/03-p0-usage.md)
+- [Two-machine PoC results](docs/05-p0-results.md)
+- [Service + sign-in screen PoC](docs/06-service-login-poc.md)
+- [Installer, discovery and pairing (v0.2)](docs/11-app-installer.md)
+- [Two-machine acceptance summary](docs/12-stage-summary.md)
+- [Clipboard sync and cursor hiding (v0.3)](docs/13-clipboard-and-cursor.md)
+- [Bilingual UI and Inno Setup installer (v0.4)](docs/14-bilingual-and-inno.md)
+- [AV / EDR and code signing strategy](docs/04-av-and-signing.md)
 
-Winlogon 本機測試：
+Most documents are written in Traditional Chinese.
 
-```powershell
-# B 的管理員 PowerShell
-.\dist\install-service.ps1 -ClientPort 45871
+## Known limitations
 
-# 執行後 15 秒內按 Win+L
-.\dist\lankvm-devtools.exe local-winlogon-test --delay 15 --motion 300
-```
+- **Unsigned binaries** — SmartScreen, McAfee or Apex One may warn or quarantine. Add a hash
+  allow-list if needed; signing is planned.
+- **Unencrypted LAN transport** — the P0 protocol is plain UDP/TCP and the pairing code has only
+  3 digits. Use it on a trusted network only. QUIC/TLS + SPAKE2 is planned.
+- **Windows only** — macOS/Linux are not implemented.
+- **Clipboard needs both machines signed in** — the sign-in screen supports keyboard/mouse only.
+- **Multi-monitor / mixed DPI** is not verified yet.
+- Tray icons on Windows 11 may be hidden behind `^`; drag it out once.
 
-詳細步驟與預期輸出見 [`docs/07-local-verification.md`](docs/07-local-verification.md)。
+## License
 
-## 跨機測試（VM）
-
-先確認 UDP 路徑（不需要 service，不需建置）：
-
-```powershell
-# B（管理員）
-.\net-check.ps1 -Mode listen -Port 45871 -Seconds 120 -AddFirewallRule
-
-# A
-.\net-check.ps1 -Mode send -Peer <B_IP> -Port 45871
-```
-
-> 若 `.ps1` 被執行原則擋住，改用 `.\run-net-check.cmd …`，或先在該視窗跑 `Set-ExecutionPolicy -Scope Process Bypass -Force`。
-
-看到 `RESULT: PASS - 10/10 replies` 再往下。
-
-B：
-
-```powershell
-.\install-service.ps1 -ClientPort 45871
-```
-
-A：
-
-```powershell
-.\lankvm-devtools.exe poc --role master --peer <B_IP> --port 45871 --edge right --seconds 180
-```
-
-A 必須先看到 `[master] client online`，B 鎖定後等 `Winlogon: injector active`，再推邊界。
-
-## 封裝
-
-`dist/` 與 `LAN-KVM-v0.1-local.zip` 包含 debug 版 agent/devtools/service、安裝腳本、單機測試腳本與文件。
-
-```
-LAN-KVM-v0.1-local.zip
-SHA256 CF57F02A0EE854DDDD746F0703888E2F7F9D32536A349B5770BAA151D9E96DCC
-```
-
-完整雜湊見 [`SHA256SUMS.txt`](SHA256SUMS.txt)。
-
-> `lankvm-devtools.exe` 是開發工具（hook/injection/未加密 UDP），**不要散布**。正式產品是 `lankvm-agent.exe`；防毒/簽章策略見 [`docs/04-av-and-signing.md`](docs/04-av-and-signing.md)。若 devtools/service 被 AV 立即刪除，請用隔離 VM 或請 IT 對 SHA-256 加白名單，**不要關閉防毒**。
-
-## Workspace
-
-```
-crates/
-  lankvm-core/       # 幾何、佈局、共用型別
-  lankvm-input/      # 邊界偵測、座標映射（純邏輯 + 測試）
-  lankvm-net/        # P0 封包格式（正式版會換成 QUIC）
-  lankvm-platform/   # Windows trait + probe/hook/injection/PoC
-  lankvm-clipboard/  # 文字/圖片/CF_HDROP、監聽、postcard wire format
-  lankvm-files/      # 分塊複製、BLAKE3、atomic rename
-  lankvm-agent/      # 產品骨架：probe / version（不含開發工具）
-  lankvm-devtools/   # 開發專用：local tests / poc（不散布）
-  lankvm-service/    # Windows Service + SYSTEM session agent
-  lankvm-app/        # v0.2 常駐 App：探索/配對/UI/engine
-  lankvm-setup/      # v0.2 安裝程式（防火牆/啟動/捷徑）
-assets/branding/     # 定案 Logo（Seam）、ICO/ICNS/托盤圖示
-dist/                # v0.1-local 測試包
-docs/                # 技術評估、架構、測試與 AV 策略
-```
-
-## 目前方向
-
-- 技術棧：Rust；v0.2 UI 是本機瀏覽器頁面，後續可換 Tauri 2 原生視窗
-- 行程架構：常駐 App（UI + supervisor）+ 隱藏 engine 子程序；SYSTEM service 待整合
-- 登入畫面：Windows 服務 + `winlogon` token + 每桌面 hook/injector；macOS/Linux 後續
-- 傳輸：P0 用 UDP；正式版 QUIC（`quinn` + `rustls`）
-- 探索/配對：mDNS-SD + SPAKE2 / SAS + 憑證 pinning（尚未實作）
-- 游標：P0 相對注入；絕對定位已驗證，待接上協定
-- 剪貼簿/檔案：本機引擎完成；跨機同步待傳輸層
-- 品牌：LAN-KVM；Logo 定案 **Seam**
-
-## 授權
-
-**GPL-3.0-or-later**，完整條文見 [`LICENSE`](LICENSE)。目前是 clean-room 實作，不直接複製 Deskflow 的 GPL-2.0-only 程式碼；若之後決定移植，需改為 GPL-2.0-only 並審查相依授權。
-
-## 下一步
-
-1. ~~在乾淨 VM（無 Apex One）打通 A→B UDP，測跨機 Default/Winlogon 滑鼠+鍵盤。~~ **2026-10-23 新場域已完成**：UDP 10/10、Default/Winlogon 注入 `inject_fail=0`。
-2. ~~v0.2 兩台實機驗收：安裝、探索、配對、開機自動連線、來回切換、解除配對、登入頁。~~ **2026-10-23 完成**，見 `docs/12-stage-summary.md`。
-3. ~~把 SYSTEM service 接回 App，Winlogon/UAC 控制。~~ **已完成**（Winlogon helper process）。
-4. QUIC/TLS + SPAKE2/憑證，取代 UDP + 3 位碼。
-5. ~~跨機剪貼簿/檔案同步（本機引擎已完成，接傳輸層）。~~ **v0.3-clip 已接上 TCP 45875**，見 `docs/13-clipboard-and-cursor.md`。
-6. 絕對定位游標接入協定（改善手感）。
-7. 正式安裝器（Inno Setup/MSI）、程式與服務簽章、AV 白名單、正式卸載/升級。
-8. 多螢幕/混合 DPI、24 小時 soak、斷線恢復。
-9. macOS/Linux 平台層。
+[GPL-3.0-or-later](LICENSE). This is a clean-room implementation; no Deskflow/GPL-2.0-only code
+was copied. If that changes, the license must be revisited.

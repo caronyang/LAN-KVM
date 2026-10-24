@@ -1,9 +1,9 @@
-# 中英文介面與 Inno Setup 安裝程式（v0.4）
+# 中英文介面與 Inno Setup 安裝程式（v1.0）
 
 > 日期：2026-10-24
-> 版本：`0.4.0`
-> 產物：`dist-app/LAN-KVM-Setup-0.4-inno.exe`
-> SHA-256：`5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA`
+> 版本：`1.0.0`（首個公開發佈版）
+> 產物：`dist-app/LAN-KVM-Setup-1.0.0.exe`
+> SHA-256：`C399AE8ABC1B810C602E2933F3174A8F5136376C16FBF22B7913169B648B27E0`
 
 這一階段把交付方式收尾：介面中英文雙語，並改用 **Inno Setup** 產生的標準安裝程式
 （取代原本自製的 self-extract setup）。
@@ -16,19 +16,20 @@
 
 - 內建 `zh`（繁體中文）與 `en` 兩份字典，所有靜態文字用 `data-i18n` 標記，
   動態文字（狀態、角色、提示、toast、配對 modal）統一走 `t("key")`。
-- 語言選擇：
-  1. 若 `localStorage["lankvm.lang"]` 有值，直接使用（手動切換會記住）。
-  2. 否則看 `navigator.language`：`zh*` → 中文，其他 → English。
-- 右上角 `<select id="lang">` 可隨時切換；`<html lang>` 會同步更新。
-- 重新整理後仍維持同一語言（實測 `reload` 後 `lang=en` 保留）。
+- **預設語言是 English**（`Config.lang` 預設 `"en"`，`app.json` 沒這個欄位時也回退 `en`）。
+- 語言設定的來源是**伺服器端** `app.json` 的 `lang`，不是瀏覽器：
+  1. 開啟 UI 時先用 English 畫出畫面。
+  2. 收到 `/api/state` 後同步成 `config.lang`。
+  3. 右上角 `<select id="lang">` 切換時 `POST /api/settings {lang}`，寫回 `app.json`。
+- 這樣**系統匣選單會跟 UI 使用同一個語言**（預設 English，切成中文後兩邊一起變）。
+- `<html lang>` 會同步更新（`en` / `zh-Hant`）。
 
 新增字串只要同時加到 `I18N.zh` 與 `I18N.en`，就不會出現只翻一半的畫面。
 
 ### 1.2 系統匣選單（`crates/lankvm-app/src/tray.rs`）
 
-- 托盤提示與右鍵選單跟著 **Windows 顯示語言**（`GetUserDefaultUILanguage`，
-  `0x04xx` 視為中文），不跟瀏覽器設定。
-- 例：`LAN-KVM - 主控中 (192.168.68.69)` / `LAN-KVM - Controlling (192.168.68.69)`。
+- 托盤提示與右鍵選單讀 `config.lang`（和 UI 同一個設定，預設 English）。
+- 例：`LAN-KVM - Controlling (192.168.68.69)` / `LAN-KVM - 主控中 (192.168.68.69)`。
 
 ### 1.3 安裝程式
 
@@ -63,7 +64,7 @@ installer/
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
 installer\build.cmd
-# 產出 dist-app\LAN-KVM-Setup-0.4-inno.exe
+# 產出 dist-app\LAN-KVM-Setup-1.0.0.exe
 ```
 
 `build.cmd` 會依序找：
@@ -130,7 +131,7 @@ installer\build.cmd
 
 ### 2.6 驗收清單
 
-1. 執行 `LAN-KVM-Setup-0.4-inno.exe`（UAC 按是），選「繁體中文」。
+1. 執行 `LAN-KVM-Setup-1.0.0.exe`（UAC 按是），選「繁體中文」。
 2. 安裝完成後：
    ```powershell
    sc query LAN-KVM
@@ -138,7 +139,7 @@ installer\build.cmd
    schtasks /Query /TN "LAN-KVM Ensure Service" /V /FO LIST
    Get-NetFirewallRule -DisplayName "LAN-KVM*" | Select DisplayName,Enabled,Direction
    ```
-3. 托盤圖示出現，UI 顯示 `0.4.0`；右上角切換 中文/English。
+3. 托盤圖示出現，UI 顯示 `1.0.0`；右上角切換 中文/English。
 4. 重開機：服務與托盤程式自動起來，配對連線恢復。
 5. 「新增或移除程式」可看到 LAN-KVM；解除安裝後服務、排程、防火牆規則都消失。
 
@@ -146,6 +147,6 @@ installer\build.cmd
 
 ## 3. 這一版的其他變更
 
-- workspace 版本 `0.1.0` → `0.4.0`（UI 顯示與 exe 版本資源一致）。
+- workspace 版本 `0.1.0` → `1.0.0`（UI 顯示與 exe 版本資源一致）。
 - `lankvm-devtools clipboard-files <path>`：診斷用，直接以 app 的 `write_files`
   設定 CF_HDROP，可驗證剪貼簿格式是否被清空。

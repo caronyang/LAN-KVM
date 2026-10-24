@@ -29,6 +29,10 @@ fn default_release_px() -> i32 {
     2
 }
 
+fn default_lang() -> String {
+    "en".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PairedPeer {
     pub id: String,
@@ -64,6 +68,9 @@ pub struct Config {
     pub release_px: i32,
     #[serde(default)]
     pub paused: bool,
+    /// UI language: "en" (default) or "zh". Shared by the web UI and the tray.
+    #[serde(default = "default_lang")]
+    pub lang: String,
     #[serde(default)]
     pub paired: Vec<PairedPeer>,
 }
@@ -78,6 +85,7 @@ impl Config {
             trigger_ms: default_trigger_ms(),
             release_px: default_release_px(),
             paused: false,
+            lang: default_lang(),
             paired: Vec::new(),
         }
     }
@@ -253,6 +261,7 @@ impl App {
             "name": config.name,
             "version": env!("CARGO_PKG_VERSION"),
             "paused": config.paused,
+            "lang": config.lang,
             "suppressed": suppressed,
             "service_running": self.service_ok.load(Ordering::Relaxed),
             "settings": {

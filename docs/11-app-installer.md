@@ -240,17 +240,17 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.4-inno.exe   5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA
+  LAN-KVM-Setup-1.0.0.exe       C399AE8ABC1B810C602E2933F3174A8F5136376C16FBF22B7913169B648B27E0
+  LAN-KVM-Setup-0.4-inno.exe    5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA
   LAN-KVM-Setup-0.3-clip3.exe   5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1
-  LAN-KVM-Setup-0.2-login3.exe   8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
+  LAN-KVM-Setup-0.2-login3.exe  8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
   README.txt
 ```
 
-> **v0.4 起改用 Inno Setup**（`0.4-inno`）：標準新增/移除程式、升級、`/SILENT`、
-> 中英文安裝精靈，安裝步驟與自製 setup 相同。建置方式與細節見
-> [`docs/14-bilingual-and-inno.md`](14-bilingual-and-inno.md)。
+> **v1.0.0 是首個公開發佈版**（Inno Setup，預設英文 UI，可切換繁體中文）。
+> 建置方式與安裝/解除安裝細節見 [`docs/14-bilingual-and-inno.md`](14-bilingual-and-inno.md)。
 >
-> `0.3-clip3` 是上一個自製 self-extract setup（內容相同，但沒有標準卸載流程），
+> `0.4-inno` 是上一個候選版；`0.3-clip3` 為自製 self-extract setup；
 > `0.2-login3` 為已驗收的登入頁版本。
 
 建置（順序很重要，setup 會 `include_bytes!` 前一步的產物）：

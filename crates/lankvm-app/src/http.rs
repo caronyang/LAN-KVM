@@ -274,6 +274,11 @@ fn route(app: &Arc<App>, url: &str, payload: &Value) -> Value {
             if let Some(v) = payload.get("paused").and_then(|v| v.as_bool()) {
                 config.paused = v;
             }
+            if let Some(v) = payload.get("lang").and_then(|v| v.as_str()) {
+                if v == "en" || v == "zh" {
+                    config.lang = v.to_string();
+                }
+            }
             save(app.profile.as_deref(), &config);
             json!({"ok": true})
         }

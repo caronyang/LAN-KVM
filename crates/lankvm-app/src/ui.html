@@ -344,11 +344,9 @@ const I18N = {
   }
 };
 
-let lang = (() => {
-  const saved = localStorage.getItem("lankvm.lang");
-  if (saved === "zh" || saved === "en") return saved;
-  return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
-})();
+// Product language. English is the default; the server keeps the setting so the
+// tray menu uses the same value.
+let lang = "en";
 
 function t(key, vars) {
   let s = (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key;
@@ -366,9 +364,9 @@ function applyI18n() {
 }
 
 document.getElementById("lang").addEventListener("change", e => {
-  lang = e.target.value;
-  localStorage.setItem("lankvm.lang", lang);
+  lang = e.target.value === "zh" ? "zh" : "en";
   applyI18n();
+  api("/api/settings", { lang }).catch(() => {});
 });
 
 let S = null;
@@ -388,6 +386,11 @@ async function refresh() {
   try {
     const res = await fetch("/api/state", { cache: "no-store" });
     S = await res.json();
+    if ((S.lang === "en" || S.lang === "zh") && S.lang !== lang) {
+      lang = S.lang;
+      applyI18n();
+      return;
+    }
     render();
   } catch (e) {
     document.getElementById("hdrStatus").textContent = t("cannotReach");
