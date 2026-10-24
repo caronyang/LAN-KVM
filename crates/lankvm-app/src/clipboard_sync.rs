@@ -10,7 +10,6 @@
 //! local change so it is not sent back.
 
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -35,13 +34,23 @@ const VERSION: u16 = 1;
 const MAX_FRAME: usize = 192 * 1024 * 1024;
 const MAX_FILES_TOTAL: usize = 128 * 1024 * 1024;
 const MAX_FILES: usize = 200;
-const ECHO_WINDOW: Duration = Duration::from_millis(1_500);
 const HEARTBEAT: Duration = Duration::from_secs(10);
 
 /// Bumped for every accepted connection; older sessions see a mismatch and
 /// exit, so a reconnect never leaves two writers fighting over the clipboard.
 static CONN_GEN: AtomicU64 = AtomicU64::new(0);
-static SUPPRESS_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+
+/// True while a remote frame is being written to the local clipboard. The
+/// writer must not consume the resulting sequence change during this window.
+static APPLYING: AtomicBool = AtomicBool::new(false);
+/// Sequence number produced by our own clipboard write. Exactly this one change
+/// is ignored; a user copy right after it still goes through.
+static SUPPRESSED_SEQ: AtomicU64 = AtomicU64::new(u64::MAX);
+/// Fingerprint and time of the last frame we applied. Guards against Windows
+/// or a clipboard viewer re-announcing the same content right after our write
+/// (a user re-copy later is not affected because the window is short).
+static LAST_APPLIED: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
+const REANNOUNCE_WINDOW: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Hello {
@@ -74,14 +83,6 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
-}
-
-fn suppressed() -> bool {
-    now_ms() < SUPPRESS_UNTIL_MS.load(Ordering::SeqCst)
-}
-
-fn suppress_for(window: Duration) {
-    SUPPRESS_UNTIL_MS.store(now_ms() + window.as_millis() as u64, Ordering::SeqCst);
 }
 
 pub fn start(app: Arc<App>) {
@@ -236,10 +237,6 @@ fn run_session(app: Arc<App>, mut stream: TcpStream, send_initial: bool) -> Resu
     let gen = CONN_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let alive = Arc::new(AtomicBool::new(true));
     let watcher = Arc::new(Mutex::new(ClipboardWatcher::new()));
-    // Fingerprint of the content the peer last sent us. Writing it to the
-    // clipboard bumps the local sequence number, so without this the other
-    // side would see our echo and bounce the same content back forever.
-    let last_remote = Arc::new(AtomicU64::new(0));
 
     let mut reader_stream = stream.try_clone().context("clone clipboard socket")?;
     // Blocking reads: the reader is unblocked by shutting the socket down when
@@ -250,7 +247,6 @@ fn run_session(app: Arc<App>, mut stream: TcpStream, send_initial: bool) -> Resu
     let reader_app = app.clone();
     let reader_alive = alive.clone();
     let reader_watcher = watcher.clone();
-    let reader_remote = last_remote.clone();
     let reader = thread::spawn(move || {
         loop {
             if CONN_GEN.load(Ordering::SeqCst) != gen {
@@ -258,12 +254,8 @@ fn run_session(app: Arc<App>, mut stream: TcpStream, send_initial: bool) -> Resu
             }
             match read_frame(&mut reader_stream) {
                 Ok(bytes) => {
-                    match apply_frame(&reader_app, &reader_watcher, &bytes) {
-                        Ok(Some(fingerprint)) => {
-                            reader_remote.store(fingerprint, Ordering::SeqCst)
-                        }
-                        Ok(None) => {}
-                        Err(err) => reader_app.log(format!("clipboard apply failed: {err:#}")),
+                    if let Err(err) = apply_frame(&reader_app, &reader_watcher, &bytes) {
+                        reader_app.log(format!("clipboard apply failed: {err:#}"));
                     }
                 }
                 Err(_) => break,
@@ -274,6 +266,9 @@ fn run_session(app: Arc<App>, mut stream: TcpStream, send_initial: bool) -> Resu
 
     stream.set_write_timeout(Some(Duration::from_secs(30)))?;
 
+    let mut last_sent = Instant::now();
+    let mut last_sent_fp = 0u64;
+
     if send_initial {
         if let Some(content) = current_clipboard() {
             watcher
@@ -281,47 +276,79 @@ fn run_session(app: Arc<App>, mut stream: TcpStream, send_initial: bool) -> Resu
                 .unwrap_or_else(|e| e.into_inner())
                 .acknowledge();
             if let Ok(frame) = build_frame(&app, &content) {
+                last_sent_fp = frame_fingerprint(&frame);
                 if write_frame(&mut stream, &postcard::to_allocvec(&frame)?).is_ok() {
-                    app.log(format!(
-                        "clipboard sent: {}",
-                        lankvm_clipboard::content_summary(&content)
-                    ));
+                    app.log(format!("clipboard sent (initial): {}", frame_summary(&frame)));
                 }
             }
         }
     }
 
-    let mut last_sent = Instant::now();
-    let mut last_sent_fp = 0u64;
+    let mut last_sent_at = Instant::now();
     loop {
         if !alive.load(Ordering::SeqCst) || CONN_GEN.load(Ordering::SeqCst) != gen {
             break;
         }
+
+        // Do not consume the sequence change while our own apply is in flight.
+        if APPLYING.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(30));
+            continue;
+        }
+        // Ignore exactly the change our own clipboard write produced. A user
+        // copy immediately afterwards has a newer sequence and is still sent.
+        let seq = lankvm_clipboard::sequence() as u64;
+        if seq == SUPPRESSED_SEQ.load(Ordering::SeqCst) {
+            watcher
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .acknowledge();
+            thread::sleep(Duration::from_millis(120));
+            continue;
+        }
+
         let change = {
             let mut guard = watcher.lock().unwrap_or_else(|e| e.into_inner());
             guard.poll()
         };
         if let Some(content) = change {
-            let fp = fingerprint(&content);
-            if suppressed() || fp == last_remote.load(Ordering::SeqCst) || fp == last_sent_fp {
+            // The sequence changed between our flag check and the poll: treat
+            // it as our own write rather than echoing it back.
+            if APPLYING.load(Ordering::SeqCst) {
+                watcher
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .acknowledge();
+                thread::sleep(Duration::from_millis(60));
                 continue;
             }
             match build_frame(&app, &content) {
-                Ok(frame) => match postcard::to_allocvec(&frame) {
-                    Ok(bytes) => {
-                        if let Err(err) = write_frame(&mut stream, &bytes) {
-                            app.log(format!("clipboard send failed: {err}"));
-                            break;
-                        }
-                        last_sent = Instant::now();
-                        last_sent_fp = fp;
-                        app.log(format!(
-                            "clipboard sent: {}",
-                            lankvm_clipboard::content_summary(&content)
-                        ));
+                Ok(frame) => {
+                    let fp = frame_fingerprint(&frame);
+                    if recently_applied(fp)
+                        || (fp == last_sent_fp && last_sent_at.elapsed() < REANNOUNCE_WINDOW)
+                    {
+                        watcher
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .acknowledge();
+                        thread::sleep(Duration::from_millis(60));
+                        continue;
                     }
-                    Err(err) => app.log(format!("clipboard encode failed: {err}")),
-                },
+                    match postcard::to_allocvec(&frame) {
+                        Ok(bytes) => {
+                            if let Err(err) = write_frame(&mut stream, &bytes) {
+                                app.log(format!("clipboard send failed: {err}"));
+                                break;
+                            }
+                            last_sent = Instant::now();
+                            last_sent_fp = fp;
+                            last_sent_at = Instant::now();
+                            app.log(format!("clipboard sent: {}", frame_summary(&frame)));
+                        }
+                        Err(err) => app.log(format!("clipboard encode failed: {err}")),
+                    }
+                }
                 Err(err) => app.log(format!("clipboard skipped: {err:#}")),
             }
         }
@@ -435,38 +462,59 @@ fn apply_frame(
     app: &Arc<App>,
     watcher: &Arc<Mutex<ClipboardWatcher>>,
     bytes: &[u8],
-) -> Result<Option<u64>> {
+) -> Result<()> {
     let frame: Frame = postcard::from_bytes(bytes).context("decode clipboard frame")?;
-    let content = match frame {
-        Frame::Ping => return Ok(None),
-        Frame::Text(text) => ClipboardContent::Text(text),
+    let summary = frame_summary(&frame);
+    let fingerprint = frame_fingerprint(&frame);
+    // Record before writing: from this moment the writer knows any change it
+    // sees for this content is our own echo.
+    *LAST_APPLIED.lock().unwrap_or_else(|e| e.into_inner()) = Some((fingerprint, Instant::now()));
+
+    let mut file_dir: Option<PathBuf> = None;
+    let content = match &frame {
+        Frame::Ping => return Ok(()),
+        Frame::Text(text) => ClipboardContent::Text(text.clone()),
         Frame::Image {
             width,
             height,
             png,
         } => ClipboardContent::Image {
-            width,
-            height,
-            png,
+            width: *width,
+            height: *height,
+            png: png.clone(),
         },
-        Frame::Files(files) => ClipboardContent::Files(write_incoming_files(&files)?),
+        Frame::Files(files) => {
+            let (paths, dir) = write_incoming_files(files)?;
+            file_dir = Some(dir);
+            ClipboardContent::Files(paths)
+        }
     };
-    let fp = fingerprint(&content);
 
     let mut last_err = None;
     for _ in 0..3 {
-        match lankvm_clipboard::write_supported(&content) {
+        // While this flag is set the writer will not consume the clipboard
+        // sequence change caused by the write below.
+        APPLYING.store(true, Ordering::SeqCst);
+        let result = lankvm_clipboard::write_supported(&content);
+        if result.is_ok() {
+            SUPPRESSED_SEQ.store(lankvm_clipboard::sequence() as u64, Ordering::SeqCst);
+        }
+        APPLYING.store(false, Ordering::SeqCst);
+
+        match result {
             Ok(()) => {
-                suppress_for(ECHO_WINDOW);
                 watcher
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .acknowledge();
-                app.log(format!(
-                    "clipboard received: {}",
-                    lankvm_clipboard::content_summary(&content)
-                ));
-                return Ok(Some(fp));
+                match &file_dir {
+                    Some(dir) => app.log(format!(
+                        "clipboard received: {summary} -> {}",
+                        dir.display()
+                    )),
+                    None => app.log(format!("clipboard received: {summary}")),
+                }
+                return Ok(());
             }
             Err(err) => {
                 last_err = Some(err);
@@ -477,32 +525,65 @@ fn apply_frame(
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("write clipboard failed")))
 }
 
-/// Stable, cheap identity of clipboard content, used only for echo detection.
-fn fingerprint(content: &ClipboardContent) -> u64 {
+fn recently_applied(fingerprint: u64) -> bool {
+    let guard = LAST_APPLIED.lock().unwrap_or_else(|e| e.into_inner());
+    match *guard {
+        Some((fp, at)) => fp == fingerprint && at.elapsed() < REANNOUNCE_WINDOW,
+        None => false,
+    }
+}
+
+/// Identity of the content carried by a frame, computed from what is actually
+/// sent (file bytes included), so two distinct files with the same name/size
+/// are not confused.
+fn frame_fingerprint(frame: &Frame) -> u64 {
+    use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    match content {
-        ClipboardContent::Text(text) => {
+    match frame {
+        Frame::Ping => 0u8.hash(&mut hasher),
+        Frame::Text(text) => {
             1u8.hash(&mut hasher);
             text.hash(&mut hasher);
         }
-        ClipboardContent::Image { png, .. } => {
+        Frame::Image {
+            width,
+            height,
+            png,
+        } => {
             2u8.hash(&mut hasher);
+            width.hash(&mut hasher);
+            height.hash(&mut hasher);
             png.hash(&mut hasher);
         }
-        ClipboardContent::Files(files) => {
+        Frame::Files(files) => {
             3u8.hash(&mut hasher);
-            for path in files {
-                path.file_name().hash(&mut hasher);
-                if let Ok(meta) = fs::metadata(path) {
-                    meta.len().hash(&mut hasher);
-                }
+            for file in files {
+                file.name.hash(&mut hasher);
+                file.data.hash(&mut hasher);
             }
         }
     }
     hasher.finish()
 }
 
-fn write_incoming_files(files: &[WireFile]) -> Result<Vec<PathBuf>> {
+fn frame_summary(frame: &Frame) -> String {
+    match frame {
+        Frame::Ping => "ping".to_string(),
+        Frame::Text(text) => format!("text ({} chars)", text.chars().count()),
+        Frame::Image { width, height, png } => {
+            format!("image {width}x{height} ({} bytes PNG)", png.len())
+        }
+        Frame::Files(files) => {
+            let mut names: Vec<&str> = files.iter().take(3).map(|f| f.name.as_str()).collect();
+            if files.len() > 3 {
+                names.push("...");
+            }
+            format!("files ({}) [{}]", files.len(), names.join(", "))
+        }
+    }
+}
+
+fn write_incoming_files(files: &[WireFile]) -> Result<(Vec<PathBuf>, PathBuf)> {
     let root = config_dir().join("clipboard");
     cleanup_clipboard_dirs(&root);
     let dir = root.join(now_ms().to_string());
@@ -527,7 +608,7 @@ fn write_incoming_files(files: &[WireFile]) -> Result<Vec<PathBuf>> {
     if paths.is_empty() {
         bail!("empty clipboard file bundle");
     }
-    Ok(paths)
+    Ok((paths, dir))
 }
 
 fn cleanup_clipboard_dirs(root: &Path) {

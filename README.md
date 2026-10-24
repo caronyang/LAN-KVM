@@ -20,16 +20,19 @@
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 - [Logo 與品牌資產](assets/branding/gallery.html)（規範：`assets/branding/README.md`）
 
-## 安裝版（v0.3-clip）
+## 安裝版（v0.3-clip2）
 
 ```powershell
 # 單一安裝檔；內嵌 App 與 SYSTEM 服務（跨機剪貼簿 + 游標隱藏）
-dist-app\LAN-KVM-Setup-0.3-clip.exe
+dist-app\LAN-KVM-Setup-0.3-clip2.exe
 
 # SHA-256
-# D8CE52A01DB1C051B3B24026D43C540C13E6EE5B1A1A7FBE47513848FBD734CA
+# 7FA43F902902DECA489AE2711D722692CAF1DB6DDC3130BE0072B7DF1C24503B
 ```
 
+> `-clip2` 修正回音抑制：改用精確剪貼簿序號 + 3 秒內容窗，貼上後立刻複製的新內容
+> 不會再被吞掉；log 也會列出傳送的檔名與落地資料夾。
+>
 > v0.2 已驗收的登入頁版本保留為 `dist-app\LAN-KVM-Setup-0.2-login3.exe`
 > （`8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3`）。
 

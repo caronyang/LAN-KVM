@@ -240,12 +240,15 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-0.3-clip.exe     D8CE52A01DB1C051B3B24026D43C540C13E6EE5B1A1A7FBE47513848FBD734CA
+  LAN-KVM-Setup-0.3-clip2.exe   7FA43F902902DECA489AE2711D722692CAF1DB6DDC3130BE0072B7DF1C24503B
+  LAN-KVM-Setup-0.3-clip.exe    D8CE52A01DB1C051B3B24026D43C540C13E6EE5B1A1A7FBE47513848FBD734CA
   LAN-KVM-Setup-0.2-login3.exe   8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
   README.txt
 ```
 
-> `0.3-clip` 是目前測試版：多了跨機剪貼簿（TCP 45875，文字/圖片/檔案）與控制端游標隱藏（透明 overlay + 1×1 ClipCursor）。`0.2-login3` 為已驗收的登入頁版本，保留供對照。
+> `0.3-clip2` 是目前測試版：跨機剪貼簿（TCP 45875，文字/圖片/檔案）與控制端游標隱藏
+> （透明 overlay + 1×1 ClipCursor）。`-clip2` 修正回音抑制（精確剪貼簿序號 + 3 秒內容窗），
+> 並在 log 列出傳送的檔名與落地資料夾。`0.3-clip`、`0.2-login3` 保留供對照。
 
 建置（順序很重要，setup 會 `include_bytes!` 前一步的產物）：
 
