@@ -1,8 +1,8 @@
 # 跨機剪貼簿與控制端游標隱藏（v0.3-clip）
 
 > 日期：2026-10-24
-> 產物：`dist-app/LAN-KVM-Setup-0.3-clip2.exe`
-> SHA-256：`7FA43F902902DECA489AE2711D722692CAF1DB6DDC3130BE0072B7DF1C24503B`
+> 產物：`dist-app/LAN-KVM-Setup-0.3-clip3.exe`
+> SHA-256：`5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1`
 
 這一階段處理兩件事：
 
@@ -61,7 +61,38 @@ clipboard sent: files (1) [TEST-file-3410.txt]
 clipboard received: files (1) [TEST-file-3410.txt] -> C:\Users\...\LAN-KVM\clipboard\1792805341024
 ```
 
-### 1.4 回音抑制（避免兩台互丟）
+### 1.4 檔案貼上卻貼到「上一個檔案」（`-clip3` 修正）
+
+**症狀**：A 先複製 `test.txt` 到 B（成功），接著 B 複製 `README.txt` 到 A，A 貼上卻還是 `test.txt`。
+
+**根因**：`clipboard-win` 的 `formats::FileList.write_clipboard()` 內部使用 `NoClear`，
+只呼叫 `SetClipboardData(CF_HDROP, ...)`，**不會先 `EmptyClipboard`**。
+Explorer 複製檔案時除了 CF_HDROP 還會放 `Shell IDList Array`（CFSTR_SHELLIDLIST）等格式，
+而 Explorer 貼上時**優先使用 Shell IDList Array**。所以即使我們的 CF_HDROP 已指向新的
+暫存檔，剪貼簿裡那份「舊的 Shell IDList」仍然指向 `D:\...\test.txt`，貼上就變成舊檔。
+
+**修正**（`crates/lankvm-clipboard/src/lib.rs`）：
+
+```rust
+let _clipboard = Clipboard::new_attempts(10).context("open clipboard")?;
+empty().context("empty clipboard")?;          // ← 先清空所有格式
+formats::FileList.write_clipboard(&strings)?; // 再設定 CF_HDROP
+```
+
+**驗證**：先放入一個含 `StaleMarker` 自訂格式、`UnicodeText`、`FileDrop(stale.txt)` 的
+剪貼簿，再呼叫同一條 `write_files()`：
+
+```
+before: StaleMarker, FileDrop, FileNameW, FileName, System.String, UnicodeText, Text
+after : FileDrop, FileNameW, FileName        ← 只剩 CF_HDROP（FileName* 由系統衍生）
+file drop: C:\...\fresh.txt
+```
+
+`lankvm-devtools clipboard-files <path>` 就是這個診斷指令。
+
+文字與圖片沒有這個問題：arboard 的 `set_text` 走 `DoClear`，`set_image` 也會先 `empty()`。
+
+### 1.5 回音抑制（避免兩台互丟）
 
 寫入本機剪貼簿會讓剪貼簿序號改變，若不處理就會形成「A 收到 → 寫入 → A 又送出」的迴圈。
 這一版用三層，而且**不會吞掉使用者的複製動作**：
@@ -76,14 +107,15 @@ clipboard received: files (1) [TEST-file-3410.txt] -> C:\Users\...\LAN-KVM\clipb
 實測（同機兩個 profile 互連）文字、圖片、檔案都只會各送一次、各收一次，
 且「複製檔案後立刻複製文字」也能正常送出。
 
-### 1.5 已知的行為（不是 bug）
+### 1.6 已知的行為（不是 bug）
 
 - 檔名相同、大小相同、內容相同的檔案，在另一端貼上後看起來會**一模一樣**。
   例如兩台都有 `LAN-KVM-Setup-0.2.exe`，從 B 複製它到 A，A 貼上的當然還是同一個安裝檔。
-  請用**名稱不同**的檔案驗證（例如在 B 建 `B-測試-123.txt`）。
+  這點很容易和 1.4 的「貼到上一個檔案」混淆；請用**名稱不同**的檔案驗證
+  （例如在 B 建 `B-測試-123.txt`），並看 log 的檔名。
 - 兩台的系統時鐘如果差很多（例如差 12 分鐘），log 時間會對不起來，但功能不受影響。
 
-### 1.6 限制
+### 1.7 限制
 
 - 剪貼簿是**使用者工作階段**資源：兩台都必須登入 Windows。
   B 停在登入頁時，鍵鼠仍可用，但剪貼簿同步要等 B 登入後才會建立。

@@ -44,6 +44,10 @@ fn run() -> Result<()> {
         Some("clipboard-watch") => clipboard_watch(args),
         #[cfg(not(windows))]
         Some("clipboard-watch") => Err(anyhow!("LAN-KVM P0 is currently Windows-only")),
+        #[cfg(windows)]
+        Some("clipboard-files") => clipboard_files(args),
+        #[cfg(not(windows))]
+        Some("clipboard-files") => Err(anyhow!("LAN-KVM P0 is currently Windows-only")),
         Some("file-test") => file_test(args),
         #[cfg(windows)]
         Some("local-winlogon-test") => local_winlogon_test(args),
@@ -388,6 +392,25 @@ fn clipboard_watch(mut args: impl Iterator<Item = String>) -> Result<()> {
         sleep(Duration::from_millis(200));
     }
     println!("clipboard watch done");
+    Ok(())
+}
+
+/// Diagnostic: put files on the clipboard with the same code path the app uses
+/// for received files. Used to verify that stale formats (e.g. Explorer's
+/// "Shell IDList Array") are cleared.
+#[cfg(windows)]
+fn clipboard_files(mut args: impl Iterator<Item = String>) -> Result<()> {
+    let paths: Vec<std::path::PathBuf> = args.by_ref().map(std::path::PathBuf::from).collect();
+    if paths.is_empty() {
+        return Err(anyhow!("usage: clipboard-files <path>..."));
+    }
+    for path in &paths {
+        if !path.exists() {
+            return Err(anyhow!("file does not exist: {}", path.display()));
+        }
+    }
+    lankvm_clipboard::write_files(&paths)?;
+    println!("wrote {} file(s) to CF_HDROP", paths.len());
     Ok(())
 }
 

@@ -101,12 +101,18 @@ pub fn read_files() -> Result<Vec<PathBuf>> {
 
 #[cfg(windows)]
 pub fn write_files(paths: &[PathBuf]) -> Result<()> {
-    use clipboard_win::{formats, Clipboard, Setter};
+    use clipboard_win::{empty, formats, Clipboard, Setter};
     let strings: Vec<String> = paths
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
     let _clipboard = Clipboard::new_attempts(10).context("open clipboard")?;
+    // `formats::FileList` writes with `NoClear`: it only replaces CF_HDROP and
+    // leaves every other format in place. Explorer's copy operation also puts
+    // "Shell IDList Array" (CFSTR_SHELLIDLIST) on the clipboard, and Paste
+    // prefers it over CF_HDROP — so without emptying first, pasting a file we
+    // just received yields the *previous* file. Clear everything, then set.
+    empty().context("empty clipboard")?;
     formats::FileList
         .write_clipboard(&strings)
         .context("write CF_HDROP")?;

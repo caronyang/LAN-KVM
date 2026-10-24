@@ -20,18 +20,22 @@
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 - [Logo 與品牌資產](assets/branding/gallery.html)（規範：`assets/branding/README.md`）
 
-## 安裝版（v0.3-clip2）
+## 安裝版（v0.3-clip3）
 
 ```powershell
 # 單一安裝檔；內嵌 App 與 SYSTEM 服務（跨機剪貼簿 + 游標隱藏）
-dist-app\LAN-KVM-Setup-0.3-clip2.exe
+dist-app\LAN-KVM-Setup-0.3-clip3.exe
 
 # SHA-256
-# 7FA43F902902DECA489AE2711D722692CAF1DB6DDC3130BE0072B7DF1C24503B
+# 5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1
 ```
 
-> `-clip2` 修正回音抑制：改用精確剪貼簿序號 + 3 秒內容窗，貼上後立刻複製的新內容
-> 不會再被吞掉；log 也會列出傳送的檔名與落地資料夾。
+> `-clip3` 修正**檔案貼上貼到舊檔**：`clipboard-win` 的檔案 setter 不會先清空剪貼簿，
+> Explorer 舊的 `Shell IDList Array` 會蓋過新設的 CF_HDROP，貼上就變成上一個檔案。
+> 現在寫入前會先 `EmptyClipboard`。
+>
+> `-clip2` 修正回音抑制：精確剪貼簿序號 + 3 秒內容窗，貼上後立刻複製的新內容不會被吞掉；
+> log 會列出傳送的檔名與落地資料夾。
 >
 > v0.2 已驗收的登入頁版本保留為 `dist-app\LAN-KVM-Setup-0.2-login3.exe`
 > （`8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3`）。
