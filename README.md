@@ -2,7 +2,7 @@
 
 軟體式 KVM：在同一個網段的 2–3 台電腦之間共用一組鍵盤/滑鼠，支援無縫邊界切換、剪貼簿共享與檔案傳輸。目標平台為 Windows / macOS / Linux，目前只有 Windows 可實測。
 
-> 目前狀態：**v0.2-app 安裝版**（單機流程驗證完成，待兩台實機驗收）。已驗證：UDP 握手/邊界切換、游標隱藏/釘住、Raw Input、絕對游標、剪貼簿文字/圖片/檔案、剪貼簿監聽、本機檔案分塊複製、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入。2026-10-23 於新場域完成跨機驗證：A→B UDP 10/10、滑鼠/鍵盤、Winlogon 注入 `inject_fail=0`。v0.2 新增可安裝常駐 App：單一安裝檔、系統匣、自動防火牆、區網探索、3 位數配對、開機自動連線、瀏覽器 UI；client 注入走 SYSTEM 服務（支援 Winlogon/UAC，session agent 不顯示 console），A 收集紀錄時會一併抓 B 的日誌。
+> 目前狀態：**v0.2-app 兩台實機驗收完成（2026-10-23）**。已驗證：UDP 握手/邊界切換、游標隱藏/釘住、Raw Input、絕對游標、剪貼簿文字/圖片/檔案、剪貼簿監聽、本機檔案分塊複製、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入。v0.2 完成：單一安裝檔、系統匣、自動防火牆、區網探索、3 位數配對、開機自動連線、瀏覽器 UI；client 注入走 SYSTEM 服務（Winlogon/UAC、無 console）。**B 先開機停在登入頁時，A 可直接操作 B 登入**；Num Lock、滾輪、複製貼上都已實測。完整成果見 [`docs/12-stage-summary.md`](docs/12-stage-summary.md)。
 
 ## 文件
 
@@ -15,14 +15,18 @@
 - [研發歷程與接手說明](docs/08-development-history.md)
 - [新場域測試計畫（Gate 0–5）](docs/09-next-test-plan.md)
 - [v0.2 安裝版 App（探索/配對/自動連線）](docs/11-app-installer.md)
+- [v0.2 階段成果：兩台實機驗收完成](docs/12-stage-summary.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 - [Logo 與品牌資產](assets/branding/gallery.html)（規範：`assets/branding/README.md`）
 
 ## 安裝版（v0.2-app）
 
 ```powershell
-# 單一安裝檔；內嵌 App 與 SYSTEM 服務
-dist-app\LAN-KVM-Setup-0.2.exe
+# 單一安裝檔；內嵌 App 與 SYSTEM 服務（兩台實機驗收版）
+dist-app\LAN-KVM-Setup-0.2-login3.exe
+
+# SHA-256
+# 8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
 ```
 
 安裝後常駐系統匣（Windows 11 可能在 `^` 裡，第一次拖到工作列固定）：
@@ -144,9 +148,11 @@ docs/                # 技術評估、架構、測試與 AV 策略
 ## 下一步
 
 1. ~~在乾淨 VM（無 Apex One）打通 A→B UDP，測跨機 Default/Winlogon 滑鼠+鍵盤。~~ **2026-10-23 新場域已完成**：UDP 10/10、Default/Winlogon 注入 `inject_fail=0`。
-2. **v0.2 兩台實機驗收**：安裝、探索、配對、開機自動連線、來回切換、解除配對。
-3. 把 SYSTEM service 接回 App，恢復 Winlogon/UAC 控制。
+2. ~~v0.2 兩台實機驗收：安裝、探索、配對、開機自動連線、來回切換、解除配對、登入頁。~~ **2026-10-23 完成**，見 `docs/12-stage-summary.md`。
+3. ~~把 SYSTEM service 接回 App，Winlogon/UAC 控制。~~ **已完成**（Winlogon helper process）。
 4. QUIC/TLS + SPAKE2/憑證，取代 UDP + 3 位碼。
-5. 剪貼簿/檔案跨機同步（本機引擎已完成）。
+5. 跨機剪貼簿/檔案同步（本機引擎已完成，接傳輸層）。
 6. 絕對定位游標接入協定（改善手感）。
-7. 程式簽章、AV 白名單、tray icon、安裝/移除流程完善。
+7. 正式安裝器（Inno Setup/MSI）、程式與服務簽章、AV 白名單、正式卸載/升級。
+8. 多螢幕/混合 DPI、24 小時 soak、斷線恢復。
+9. macOS/Linux 平台層。
