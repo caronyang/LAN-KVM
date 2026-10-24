@@ -240,21 +240,18 @@ Log：
 
 ```
 dist-app/
+  LAN-KVM-Setup-0.4-inno.exe   5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA
   LAN-KVM-Setup-0.3-clip3.exe   5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1
-  LAN-KVM-Setup-0.3-clip2.exe   7FA43F902902DECA489AE2711D722692CAF1DB6DDC3130BE0072B7DF1C24503B
   LAN-KVM-Setup-0.2-login3.exe   8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
   README.txt
 ```
 
-> `0.3-clip3` 是目前測試版：跨機剪貼簿（TCP 45875，文字/圖片/檔案）與控制端游標隱藏
-> （透明 overlay + 1×1 ClipCursor）。
+> **v0.4 起改用 Inno Setup**（`0.4-inno`）：標準新增/移除程式、升級、`/SILENT`、
+> 中英文安裝精靈，安裝步驟與自製 setup 相同。建置方式與細節見
+> [`docs/14-bilingual-and-inno.md`](14-bilingual-and-inno.md)。
 >
-> - `-clip3`：**檔案貼上貼到舊檔**的修正。`clipboard-win` 的 `FileList` setter 用
->   `NoClear`，只換掉 CF_HDROP、不清空剪貼簿；Explorer 先前複製留下的
->   `Shell IDList Array` 還在，貼上時 Explorer 優先使用它 → 貼出上一個檔案。
->   現在 `write_files` 會先 `EmptyClipboard`。
-> - `-clip2`：回音抑制改成「精確剪貼簿序號 + 3 秒內容窗」，並在 log 列出檔名與落地資料夾。
-> - `-clip`、`0.2-login3` 保留供對照。
+> `0.3-clip3` 是上一個自製 self-extract setup（內容相同，但沒有標準卸載流程），
+> `0.2-login3` 為已驗收的登入頁版本。
 
 建置（順序很重要，setup 會 `include_bytes!` 前一步的產物）：
 

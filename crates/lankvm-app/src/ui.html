@@ -55,6 +55,7 @@
     background: var(--panel2); border: 1px solid #2c3d52; color: var(--text);
     border-radius: 8px; padding: 6px 8px; font-size: 13px;
   }
+  select.plain { padding: 4px 6px; font-size: 12px; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #1b2634; }
   th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .7px; }
@@ -86,12 +87,16 @@
 <body>
 <header>
   <h1>LAN-KVM</h1>
-  <span class="sub" id="hdrName">載入中…</span>
+  <span class="sub" id="hdrName" data-i18n="loading">載入中…</span>
   <span class="sub" id="hdrStatus"></span>
   <span style="flex:1"></span>
-  <button class="small" onclick="scan()">重新掃描</button>
-  <button class="small" onclick="collectLogs()">收集紀錄</button>
-  <button class="small danger" onclick="quitApp()">結束程式</button>
+  <select id="lang" class="plain" title="Language / 語言">
+    <option value="zh">中文</option>
+    <option value="en">English</option>
+  </select>
+  <button class="small" onclick="scan()" data-i18n="rescan">重新掃描</button>
+  <button class="small" onclick="collectLogs()" data-i18n="collectLogs">收集紀錄</button>
+  <button class="small danger" onclick="quitApp()" data-i18n="quit">結束程式</button>
 </header>
 
 <div id="globalBanner"></div>
@@ -99,64 +104,64 @@
 <main>
   <section style="display:flex;flex-direction:column;gap:16px">
     <div class="card">
-      <h2>本機</h2>
-      <div class="row"><span class="label">名稱</span><span class="value" id="ownName">-</span></div>
-      <div class="row"><span class="label">角色</span><span class="value" id="ownRole">-</span></div>
-      <div class="row"><span class="label">自動連線</span><span class="value" id="ownAuto">-</span></div>
-      <div class="row"><span class="label">狀態</span><span class="value" id="ownState">待機</span></div>
+      <h2 data-i18n="local">本機</h2>
+      <div class="row"><span class="label" data-i18n="name">名稱</span><span class="value" id="ownName">-</span></div>
+      <div class="row"><span class="label" data-i18n="role">角色</span><span class="value" id="ownRole">-</span></div>
+      <div class="row"><span class="label" data-i18n="autoConnect">自動連線</span><span class="value" id="ownAuto">-</span></div>
+      <div class="row"><span class="label" data-i18n="status">狀態</span><span class="value" id="ownState">-</span></div>
     </div>
 
     <div class="card">
-      <h2>版面與門檻</h2>
+      <h2 data-i18n="layoutThreshold">版面與門檻</h2>
       <div class="field">
-        <label>對方螢幕在我的</label>
+        <label data-i18n="peerEdge">對方螢幕在我的</label>
         <select id="edge">
-          <option value="right">右邊（我往右切過去）</option>
-          <option value="left">左邊（我往左切過去）</option>
+          <option value="right" data-i18n="edgeRight">右邊（我往右切過去）</option>
+          <option value="left" data-i18n="edgeLeft">左邊（我往左切過去）</option>
         </select>
       </div>
       <div class="grid2">
-        <div class="field"><label>切入推力 px</label><input id="triggerPx" type="number" min="4" max="200" step="1"></div>
-        <div class="field"><label>時間窗 ms</label><input id="triggerMs" type="number" min="80" max="2000" step="10"></div>
+        <div class="field"><label data-i18n="triggerPx">切入推力 px</label><input id="triggerPx" type="number" min="4" max="200" step="1"></div>
+        <div class="field"><label data-i18n="triggerMs">時間窗 ms</label><input id="triggerMs" type="number" min="80" max="2000" step="10"></div>
       </div>
-      <div class="field"><label>回切越界 px</label><input id="releasePx" type="number" min="1" max="100" step="1"></div>
+      <div class="field"><label data-i18n="releasePx">回切越界 px</label><input id="releasePx" type="number" min="1" max="100" step="1"></div>
       <div class="actions">
-        <button class="primary" onclick="saveSettings()">儲存設定</button>
-        <button onclick="togglePause()" id="pauseBtn">暫停自動連線</button>
+        <button class="primary" onclick="saveSettings()" data-i18n="saveSettings">儲存設定</button>
+        <button onclick="togglePause()" id="pauseBtn" data-i18n="pause">暫停自動連線</button>
       </div>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">設定會在下次連線時套用。左右關係也可在這裡改，不需要改指令。</p>
+      <p class="muted" style="font-size:12px;margin:10px 0 0" data-i18n="settingsHint">設定會在下次連線時套用。左右關係也可在這裡改，不需要改指令。</p>
     </div>
   </section>
 
   <section style="display:flex;flex-direction:column;gap:16px">
     <div class="card">
-      <h2>掃描到的電腦</h2>
+      <h2 data-i18n="discovered">掃描到的電腦</h2>
       <table>
-        <thead><tr><th>名稱</th><th>IP</th><th>狀態</th><th style="width:180px">動作</th></tr></thead>
-        <tbody id="peerRows"><tr><td colspan="4" class="muted">尚無資料，正在掃描…</td></tr></tbody>
+        <thead><tr><th data-i18n="name">名稱</th><th>IP</th><th data-i18n="status">狀態</th><th style="width:180px" data-i18n="actions">動作</th></tr></thead>
+        <tbody id="peerRows"><tr><td colspan="4" class="muted" data-i18n="scanning">尚無資料，正在掃描…</td></tr></tbody>
       </table>
     </div>
 
     <div class="card" id="sessionCard" style="display:none">
-      <h2>連線</h2>
-      <div class="row"><span class="label">對象</span><span class="value" id="sessPeer">-</span></div>
-      <div class="row"><span class="label">角色</span><span class="value" id="sessRole">-</span></div>
-      <div class="row"><span class="label">時間</span><span class="value" id="sessTime">-</span></div>
+      <h2 data-i18n="connection">連線</h2>
+      <div class="row"><span class="label" data-i18n="peer">對象</span><span class="value" id="sessPeer">-</span></div>
+      <div class="row"><span class="label" data-i18n="role">角色</span><span class="value" id="sessRole">-</span></div>
+      <div class="row"><span class="label" data-i18n="time">時間</span><span class="value" id="sessTime">-</span></div>
       <div class="actions" style="margin-top:12px">
-        <button class="danger" onclick="stopSession()">停止連線</button>
+        <button class="danger" onclick="stopSession()" data-i18n="stopSession">停止連線</button>
       </div>
     </div>
 
     <div class="card">
-      <h2>已配對（開機自動連線）</h2>
+      <h2 data-i18n="pairedTitle">已配對（開機自動連線）</h2>
       <table>
-        <thead><tr><th>名稱</th><th>角色</th><th>自動</th><th style="width:200px">動作</th></tr></thead>
-        <tbody id="pairedRows"><tr><td colspan="4" class="muted">尚未配對</td></tr></tbody>
+        <thead><tr><th data-i18n="name">名稱</th><th data-i18n="role">角色</th><th data-i18n="auto">自動</th><th style="width:200px" data-i18n="actions">動作</th></tr></thead>
+        <tbody id="pairedRows"><tr><td colspan="4" class="muted" data-i18n="notPaired">尚未配對</td></tr></tbody>
       </table>
     </div>
 
     <div class="card">
-      <h2>紀錄</h2>
+      <h2 data-i18n="logs">紀錄</h2>
       <pre class="logs" id="logs">-</pre>
     </div>
   </section>
@@ -168,6 +173,204 @@
 <div class="toast" id="toast"></div>
 
 <script>
+const I18N = {
+  zh: {
+    loading: "載入中…",
+    rescan: "重新掃描",
+    collectLogs: "收集紀錄",
+    quit: "結束程式",
+    local: "本機",
+    name: "名稱",
+    role: "角色",
+    autoConnect: "自動連線",
+    status: "狀態",
+    actions: "動作",
+    auto: "自動",
+    layoutThreshold: "版面與門檻",
+    peerEdge: "對方螢幕在我的",
+    edgeRight: "右邊（我往右切過去）",
+    edgeLeft: "左邊（我往左切過去）",
+    triggerPx: "切入推力 px",
+    triggerMs: "時間窗 ms",
+    releasePx: "回切越界 px",
+    saveSettings: "儲存設定",
+    pause: "暫停自動連線",
+    resume: "恢復自動連線",
+    settingsHint: "設定會在下次連線時套用。左右關係也可在這裡改，不需要改指令。",
+    discovered: "掃描到的電腦",
+    scanning: "尚無資料，正在掃描…",
+    connection: "連線",
+    peer: "對象",
+    time: "時間",
+    stopSession: "停止連線",
+    pairedTitle: "已配對（開機自動連線）",
+    notPaired: "尚未配對",
+    noneYet: "尚未配對。選擇上方電腦後按「配對」。",
+    roleMasterShort: "主控",
+    roleClientShort: "被控",
+    roleMaster: "主控（有鍵鼠）",
+    roleClient: "被控（接收鍵鼠）",
+    roleUnset: "未設定",
+    autoOn: "開啟",
+    autoPaused: "已暫停",
+    stateControlling: "控制對方中",
+    stateWaitingPeer: "等待對方上線",
+    stateControlled: "被控制中",
+    stateIdleSeen: "待機（看到 {n} 台）",
+    stateIdle: "待機",
+    hdrConnected: "已連線",
+    hdrWaitingPeer: "等待對方上線",
+    hdrAvailable: "{n} 台可用",
+    hdrScanning: "掃描中",
+    pillPaired: "已配對",
+    pillPairable: "可配對",
+    unpair: "解除配對",
+    pair: "配對",
+    connectNow: "立即連線",
+    autoBoot: "開機自動",
+    peersPairedOffline: "已配對：<strong>{names}</strong>（目前離線）。<br>對方在登入頁時，請確認同一版本、對方 LAN-KVM 服務是 RUNNING、登入頁 Wi-Fi/網路已連上；<strong>對方的 App 不需要啟動</strong>。",
+    peersNoData: "尚無資料。兩台都要安裝 LAN-KVM；先在其中一台完成配對。",
+    listSep: "、",
+    sessClientService: "被控（SYSTEM 服務）",
+    duration: "{m} 分 {s} 秒",
+    svcNotReady: "<strong>client 引擎（SYSTEM 服務）未就緒。</strong> 這一版需要 LAN-KVM 服務才能接受連線與控制登入畫面/UAC。請確認 <code>sc query LAN-KVM</code> 是 RUNNING，或重新安裝。",
+    autoPausedBanner: "<strong>自動連線已暫停。</strong> 按左側「恢復自動連線」即可。",
+    suppressedBanner: "手動停止後 60 秒內不會自動重連。",
+    pairingRequest: "配對請求",
+    pairingRequestHint: "{name} 要求配對。請在對方電腦輸入這組號碼：",
+    cancel: "取消",
+    enterCode: "輸入配對碼",
+    enterCodeHint: "請看 <strong>{name}</strong> 螢幕上顯示的 3 位數字。",
+    confirm: "確定",
+    rescanned: "已重新掃描",
+    pairFailed: "配對失敗",
+    unpairConfirm: "解除配對後就不會再自動連線，確定？",
+    connectFailed: "連線失敗",
+    stopped60: "已停止，60 秒內不自動重連",
+    settingsSaved: "設定已儲存",
+    saveFailed: "儲存失敗",
+    quitConfirm: "結束 LAN-KVM 常駐程式？",
+    quitDone: "LAN-KVM 已結束，可以關閉這個頁面。",
+    collecting: "正在收集本機與配對電腦的紀錄…",
+    collected: "已收集到：",
+    collectFailed: "收集失敗",
+    badResponse: "回應格式錯誤",
+    cannotReach: "無法連線到本機服務",
+    engineMarker: "---- engine ----"
+  },
+  en: {
+    loading: "Loading…",
+    rescan: "Rescan",
+    collectLogs: "Collect logs",
+    quit: "Quit",
+    local: "This computer",
+    name: "Name",
+    role: "Role",
+    autoConnect: "Auto-connect",
+    status: "Status",
+    actions: "Actions",
+    auto: "Auto",
+    layoutThreshold: "Layout & thresholds",
+    peerEdge: "Peer screen is on my",
+    edgeRight: "right (I cross to the right)",
+    edgeLeft: "left (I cross to the left)",
+    triggerPx: "Cross push (px)",
+    triggerMs: "Time window (ms)",
+    releasePx: "Return overshoot (px)",
+    saveSettings: "Save settings",
+    pause: "Pause auto-connect",
+    resume: "Resume auto-connect",
+    settingsHint: "Settings apply on the next connection. You can change the side here; no command line needed.",
+    discovered: "Discovered computers",
+    scanning: "No data yet, scanning…",
+    connection: "Connection",
+    peer: "Peer",
+    time: "Uptime",
+    stopSession: "Stop connection",
+    pairedTitle: "Paired (auto-connect at boot)",
+    notPaired: "Not paired yet",
+    noneYet: "Not paired yet. Pick a computer above and press Pair.",
+    roleMasterShort: "Controller",
+    roleClientShort: "Controlled",
+    roleMaster: "Controller (has keyboard/mouse)",
+    roleClient: "Controlled (receives input)",
+    roleUnset: "Not configured",
+    autoOn: "On",
+    autoPaused: "Paused",
+    stateControlling: "Controlling peer",
+    stateWaitingPeer: "Waiting for peer",
+    stateControlled: "Being controlled",
+    stateIdleSeen: "Idle (seeing {n})",
+    stateIdle: "Idle",
+    hdrConnected: "Connected",
+    hdrWaitingPeer: "Waiting for peer",
+    hdrAvailable: "{n} available",
+    hdrScanning: "Scanning",
+    pillPaired: "Paired",
+    pillPairable: "Available",
+    unpair: "Unpair",
+    pair: "Pair",
+    connectNow: "Connect now",
+    autoBoot: "Auto at boot",
+    peersPairedOffline: "Paired: <strong>{names}</strong> (currently offline).<br>If the peer sits at the sign-in screen, make sure both run the same version, the peer's LAN-KVM service is RUNNING, and its Wi-Fi/network is connected before sign-in; <strong>the peer's app does not need to be running</strong>.",
+    peersNoData: "No data yet. Install LAN-KVM on both machines, then pair one of them.",
+    listSep: ", ",
+    sessClientService: "Controlled (SYSTEM service)",
+    duration: "{m}m {s}s",
+    svcNotReady: "<strong>The client engine (SYSTEM service) is not ready.</strong> This build needs the LAN-KVM service to accept connections and to control the sign-in screen/UAC. Check that <code>sc query LAN-KVM</code> is RUNNING, or reinstall.",
+    autoPausedBanner: "<strong>Auto-connect is paused.</strong> Use “Resume auto-connect” on the left.",
+    suppressedBanner: "Auto-reconnect is suppressed for 60 seconds after a manual stop.",
+    pairingRequest: "Pairing request",
+    pairingRequestHint: "{name} wants to pair. Enter this code on the other computer:",
+    cancel: "Cancel",
+    enterCode: "Enter pairing code",
+    enterCodeHint: "Look at the 3-digit code shown on <strong>{name}</strong>.",
+    confirm: "OK",
+    rescanned: "Rescanned",
+    pairFailed: "Pairing failed",
+    unpairConfirm: "Unpairing stops auto-connect. Continue?",
+    connectFailed: "Connection failed",
+    stopped60: "Stopped; no auto-reconnect for 60 seconds",
+    settingsSaved: "Settings saved",
+    saveFailed: "Save failed",
+    quitConfirm: "Quit the LAN-KVM background app?",
+    quitDone: "LAN-KVM has exited. You can close this page.",
+    collecting: "Collecting logs from this computer and the paired peer…",
+    collected: "Collected to: ",
+    collectFailed: "Log collection failed",
+    badResponse: "Bad response",
+    cannotReach: "Cannot reach the local service",
+    engineMarker: "---- engine ----"
+  }
+};
+
+let lang = (() => {
+  const saved = localStorage.getItem("lankvm.lang");
+  if (saved === "zh" || saved === "en") return saved;
+  return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+})();
+
+function t(key, vars) {
+  let s = (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key;
+  if (vars) for (const k in vars) s = s.split("{" + k + "}").join(vars[k]);
+  return s;
+}
+
+function applyI18n() {
+  document.documentElement.lang = lang === "en" ? "en" : "zh-Hant";
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  const sel = document.getElementById("lang");
+  if (sel) sel.value = lang;
+  if (S) render();
+}
+
+document.getElementById("lang").addEventListener("change", e => {
+  lang = e.target.value;
+  localStorage.setItem("lankvm.lang", lang);
+  applyI18n();
+});
+
 let S = null;
 let busy = false;
 let lastPairKey = "";
@@ -178,7 +381,7 @@ async function api(path, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {})
   });
-  return await res.json().catch(() => ({ ok: false, error: "bad response" }));
+  return await res.json().catch(() => ({ ok: false, error: t("badResponse") }));
 }
 
 async function refresh() {
@@ -187,7 +390,7 @@ async function refresh() {
     S = await res.json();
     render();
   } catch (e) {
-    document.getElementById("hdrStatus").textContent = "無法連線到本機服務";
+    document.getElementById("hdrStatus").textContent = t("cannotReach");
   }
 }
 
@@ -196,11 +399,11 @@ function esc(v) {
 }
 
 function toast(msg) {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.classList.add("show");
-  clearTimeout(t._h);
-  t._h = setTimeout(() => t.classList.remove("show"), 2600);
+  const tEl = document.getElementById("toast");
+  tEl.textContent = msg;
+  tEl.classList.add("show");
+  clearTimeout(tEl._h);
+  tEl._h = setTimeout(() => tEl.classList.remove("show"), 2600);
 }
 
 function render() {
@@ -209,23 +412,23 @@ function render() {
   document.getElementById("hdrName").textContent = `${s.name} · ${s.version}`;
   document.getElementById("ownName").textContent = s.name;
   document.getElementById("ownRole").textContent =
-    (s.paired || []).some(p => p.role === "master") ? "主控（有鍵鼠）" :
-    (s.paired || []).some(p => p.role === "client") ? "被控（接收鍵鼠）" : "未設定";
-  document.getElementById("ownAuto").textContent = s.paused ? "已暫停" : "開啟";
-  document.getElementById("pauseBtn").textContent = s.paused ? "恢復自動連線" : "暫停自動連線";
+    (s.paired || []).some(p => p.role === "master") ? t("roleMaster") :
+    (s.paired || []).some(p => p.role === "client") ? t("roleClient") : t("roleUnset");
+  document.getElementById("ownAuto").textContent = s.paused ? t("autoPaused") : t("autoOn");
+  document.getElementById("pauseBtn").textContent = s.paused ? t("resume") : t("pause");
 
   const online = (s.peers || []).filter(p => p.online).length;
   const sess = s.session;
   document.getElementById("ownState").textContent = sess
     ? (sess.role === "master"
-        ? (online ? "控制對方中" : "等待對方上線")
-        : "被控制中")
-    : (online ? `待機（看到 ${online} 台）` : "待機");
+        ? (online ? t("stateControlling") : t("stateWaitingPeer"))
+        : t("stateControlled"))
+    : (online ? t("stateIdleSeen", { n: online }) : t("stateIdle"));
   document.getElementById("hdrStatus").innerHTML = sess
     ? (online
-        ? `<span class="dot on"></span>已連線`
-        : `<span class="dot"></span>等待對方上線`)
-    : `<span class="dot ${online ? "on" : ""}"></span>${online ? online + " 台可用" : "掃描中"}`;
+        ? `<span class="dot on"></span>${t("hdrConnected")}`
+        : `<span class="dot"></span>${t("hdrWaitingPeer")}`)
+    : `<span class="dot ${online ? "on" : ""}"></span>${online ? t("hdrAvailable", { n: online }) : t("hdrScanning")}`;
 
   const edge = document.getElementById("edge");
   if (document.activeElement !== edge) edge.value = s.settings.edge;
@@ -242,7 +445,7 @@ function render() {
   renderBanner(s);
   renderPairing(s);
   document.getElementById("logs").textContent =
-    [...(s.logs || []), "---- engine ----", ...(s.engine_log || [])].join("\n");
+    [...(s.logs || []), t("engineMarker"), ...(s.engine_log || [])].join("\n");
 }
 
 function renderPeers(s) {
@@ -252,20 +455,20 @@ function renderPeers(s) {
   if (!peers.length) {
     const paired = s.paired || [];
     if (paired.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">已配對：<strong>${paired.map(p => esc(p.name)).join("、")}</strong>（目前離線）。<br>
-        對方在登入頁時，請確認同一版本、B 的 LAN-KVM 服務是 RUNNING、登入頁 Wi-Fi/網路已連上；<strong>B 的 App 不需要啟動</strong>。</td></tr>`;
+      const names = paired.map(p => `<strong>${esc(p.name)}</strong>`).join(t("listSep"));
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">${t("peersPairedOffline", { names })}</td></tr>`;
     } else {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">尚無資料。兩台都要安裝 LAN-KVM；先在其中一台完成配對。</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">${t("peersNoData")}</td></tr>`;
     }
     return;
   }
   tbody.innerHTML = peers.map(p => {
     const paired = pairedIds.has(p.id);
-    let pill = `<span class="pill good">已配對</span>`;
-    if (!paired) pill = `<span class="pill">可配對</span>`;
+    let pill = `<span class="pill good">${t("pillPaired")}</span>`;
+    if (!paired) pill = `<span class="pill">${t("pillPairable")}</span>`;
     let actions = paired
-      ? `<button class="small danger" onclick="unpair('${esc(p.id)}')">解除配對</button>`
-      : `<button class="small primary" onclick="pair('${esc(p.id)}')">配對</button>`;
+      ? `<button class="small danger" onclick="unpair('${esc(p.id)}')">${t("unpair")}</button>`
+      : `<button class="small primary" onclick="pair('${esc(p.id)}')">${t("pair")}</button>`;
     return `<tr>
       <td><strong>${esc(p.name)}</strong></td>
       <td class="muted">${esc(p.ip)}</td>
@@ -279,18 +482,18 @@ function renderPaired(s) {
   const tbody = document.getElementById("pairedRows");
   const paired = s.paired || [];
   if (!paired.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="muted">尚未配對。選擇上方電腦後按「配對」。</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">${t("noneYet")}</td></tr>`;
     return;
   }
   tbody.innerHTML = paired.map(p => {
     const canConnect = p.role === "master";
     return `<tr>
       <td><strong>${esc(p.name)}</strong><div class="muted" style="font-size:11px">${esc(p.ip)}</div></td>
-      <td>${p.role === "master" ? "主控" : "被控"}</td>
-      <td><label><input type="checkbox" ${p.auto_connect ? "checked" : ""} onchange="setAuto('${esc(p.id)}', this.checked)"> 開機自動</label></td>
+      <td>${p.role === "master" ? t("roleMasterShort") : t("roleClientShort")}</td>
+      <td><label><input type="checkbox" ${p.auto_connect ? "checked" : ""} onchange="setAuto('${esc(p.id)}', this.checked)"> ${t("autoBoot")}</label></td>
       <td class="actions">
-        ${canConnect ? `<button class="small primary" onclick="connectPeer('${esc(p.id)}')">立即連線</button>` : ""}
-        <button class="small danger" onclick="unpair('${esc(p.id)}')">解除</button>
+        ${canConnect ? `<button class="small primary" onclick="connectPeer('${esc(p.id)}')">${t("connectNow")}</button>` : ""}
+        <button class="small danger" onclick="unpair('${esc(p.id)}')">${t("unpair")}</button>
       </td>
     </tr>`;
   }).join("");
@@ -304,23 +507,21 @@ function renderSession(s) {
   const peer = (s.paired || []).find(p => p.id === sess.peer_id);
   document.getElementById("sessPeer").textContent = peer ? `${peer.name} (${sess.peer_ip})` : sess.peer_ip;
   document.getElementById("sessRole").textContent = sess.role === "master"
-    ? "主控"
-    : (sess.uses_service ? "被控（SYSTEM 服務）" : "被控");
+    ? t("roleMasterShort")
+    : (sess.uses_service ? t("sessClientService") : t("roleClientShort"));
   const sec = sess.uptime_secs;
   document.getElementById("sessTime").textContent =
-    `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
+    t("duration", { m: Math.floor(sec / 60), s: sec % 60 });
 }
 
 function renderBanner(s) {
   const el = document.getElementById("globalBanner");
   let html = "";
-  if (!s.service_running) {
-    html += `<div class="banner bad"><strong>client 引擎（SYSTEM 服務）未就緒。</strong> 這一版需要 LAN-KVM 服務才能接受連線與控制登入畫面/UAC。請確認 <code>sc query LAN-KVM</code> 是 RUNNING，或重新安裝。</div>`;
-  }
+  if (!s.service_running) html += `<div class="banner bad">${t("svcNotReady")}</div>`;
   if (s.paused) {
-    html += `<div class="banner"><strong>自動連線已暫停。</strong> 按左側「恢復自動連線」即可。</div>`;
+    html += `<div class="banner">${t("autoPausedBanner")}</div>`;
   } else if (s.suppressed) {
-    html += `<div class="banner">手動停止後 60 秒內不會自動重連。</div>`;
+    html += `<div class="banner">${t("suppressedBanner")}</div>`;
   }
   el.innerHTML = html;
 }
@@ -336,25 +537,25 @@ function renderPairing(s) {
 
   if (p.role === "host") {
     document.getElementById("modalBody").innerHTML = `
-      <h2 style="margin:0 0 4px;color:var(--text)">配對請求</h2>
-      <p class="muted">${esc(p.peer_name)} 要求配對。請在對方電腦輸入這組號碼：</p>
+      <h2 style="margin:0 0 4px;color:var(--text)">${t("pairingRequest")}</h2>
+      <p class="muted">${t("pairingRequestHint", { name: esc(p.peer_name) })}</p>
       <div class="big-code">${esc(p.code || "---")}</div>
       <div class="actions" style="justify-content:flex-end;margin-top:14px">
-        <button onclick="cancelPair()">取消</button>
+        <button onclick="cancelPair()">${t("cancel")}</button>
       </div>`;
   } else {
     const err = p.error ? `<div class="banner bad" style="margin-top:10px">${esc(p.error)}</div>` : "";
     document.getElementById("modalBody").innerHTML = `
-      <h2 style="margin:0 0 4px;color:var(--text)">輸入配對碼</h2>
-      <p class="muted">請看 <strong>${esc(p.peer_name)}</strong> 螢幕上顯示的 3 位數字。</p>
+      <h2 style="margin:0 0 4px;color:var(--text)">${t("enterCode")}</h2>
+      <p class="muted">${t("enterCodeHint", { name: esc(p.peer_name) })}</p>
       <div class="field" style="margin-top:12px">
         <input id="codeInput" type="text" inputmode="numeric" maxlength="3" placeholder="000"
           style="font:700 28px Consolas;letter-spacing:10px;text-align:center">
       </div>
       ${err}
       <div class="actions" style="justify-content:flex-end;margin-top:14px">
-        <button onclick="cancelPair()">取消</button>
-        <button class="primary" onclick="submitCode()">確定</button>
+        <button onclick="cancelPair()">${t("cancel")}</button>
+        <button class="primary" onclick="submitCode()">${t("confirm")}</button>
       </div>`;
     const input = document.getElementById("codeInput");
     input.focus();
@@ -362,10 +563,10 @@ function renderPairing(s) {
   }
 }
 
-async function scan() { await api("/api/scan"); toast("已重新掃描"); refresh(); }
+async function scan() { await api("/api/scan"); toast(t("rescanned")); refresh(); }
 async function pair(id) {
   const r = await api("/api/pair", { peer_id: id });
-  if (!r.ok) toast(r.error || "配對失敗");
+  if (!r.ok) toast(r.error || t("pairFailed"));
   refresh();
 }
 async function cancelPair() { await api("/api/pair/cancel"); lastPairKey = ""; refresh(); }
@@ -373,21 +574,21 @@ async function submitCode() {
   const input = document.getElementById("codeInput");
   if (!input) return;
   const r = await api("/api/pair/code", { code: input.value.trim() });
-  if (!r.ok) toast(r.error || "配對失敗");
+  if (!r.ok) toast(r.error || t("pairFailed"));
   refresh();
 }
 async function unpair(id) {
-  if (!confirm("解除配對後就不會再自動連線，確定？")) return;
+  if (!confirm(t("unpairConfirm"))) return;
   await api("/api/unpair", { peer_id: id });
   refresh();
 }
 async function connectPeer(id) {
   const edge = document.getElementById("edge").value;
   const r = await api("/api/session/start", { peer_id: id, edge });
-  if (!r.ok) toast(r.error || "連線失敗");
+  if (!r.ok) toast(r.error || t("connectFailed"));
   refresh();
 }
-async function stopSession() { await api("/api/session/stop"); toast("已停止，60 秒內不自動重連"); refresh(); }
+async function stopSession() { await api("/api/session/stop"); toast(t("stopped60")); refresh(); }
 async function setAuto(id, enabled) { await api("/api/autoconnect", { peer_id: id, enabled }); refresh(); }
 async function saveSettings() {
   const r = await api("/api/settings", {
@@ -396,22 +597,23 @@ async function saveSettings() {
     trigger_ms: Number(document.getElementById("triggerMs").value),
     release_px: Number(document.getElementById("releasePx").value),
   });
-  toast(r.ok ? "設定已儲存" : "儲存失敗");
+  toast(r.ok ? t("settingsSaved") : t("saveFailed"));
   refresh();
 }
 async function togglePause() { await api("/api/settings", { paused: !S.paused }); refresh(); }
 async function quitApp() {
-  if (!confirm("結束 LAN-KVM 常駐程式？")) return;
+  if (!confirm(t("quitConfirm"))) return;
   await api("/api/quit");
-  document.body.innerHTML = `<p style="padding:40px;color:#8ba0b8">LAN-KVM 已結束，可以關閉這個頁面。</p>`;
+  document.body.innerHTML = `<p style="padding:40px;color:#8ba0b8">${t("quitDone")}</p>`;
 }
 async function collectLogs() {
-  toast("正在收集本機與配對電腦的紀錄…");
+  toast(t("collecting"));
   const r = await api("/api/logs", {});
-  if (r.ok) toast("已收集到：" + r.path);
-  else toast(r.error || "收集失敗");
+  if (r.ok) toast(t("collected") + r.path);
+  else toast(r.error || t("collectFailed"));
 }
 
+applyI18n();
 refresh();
 setInterval(refresh, 1000);
 </script>

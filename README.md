@@ -2,7 +2,7 @@
 
 軟體式 KVM：在同一個網段的 2–3 台電腦之間共用一組鍵盤/滑鼠，支援無縫邊界切換、剪貼簿共享與檔案傳輸。目標平台為 Windows / macOS / Linux，目前只有 Windows 可實測。
 
-> 目前狀態：**v0.3-clip 測試版（跨機剪貼簿 + 控制端游標隱藏）**。v0.2 已完成兩台實機驗收（2026-10-23）：UDP 握手/邊界切換、Raw Input、絕對游標、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入、單一安裝檔、系統匣、區網探索、3 位數配對、開機自動連線、瀏覽器 UI。**B 先開機停在登入頁時，A 可直接操作 B 登入**。v0.3 新增：任一台複製文字/圖片/檔案、另一台可貼上（TCP 45875），以及控制期間 master 游標真正消失（透明 overlay + 1×1 ClipCursor）。完整成果見 [`docs/12-stage-summary.md`](docs/12-stage-summary.md)、[`docs/13-clipboard-and-cursor.md`](docs/13-clipboard-and-cursor.md)。
+> 目前狀態：**v0.4 測試版（Inno Setup 安裝程式 + 中英文介面）**。v0.2 已完成兩台實機驗收（2026-10-23）：UDP 握手/邊界切換、Raw Input、絕對游標、Windows Service + SYSTEM session agent、`Default`/`Winlogon` 切換、Winlogon 滑鼠/鍵盤注入、單一安裝檔、系統匣、區網探索、3 位數配對、開機自動連線、瀏覽器 UI。**B 先開機停在登入頁時，A 可直接操作 B 登入**。v0.3 新增：任一台複製文字/圖片/檔案、另一台可貼上（TCP 45875），以及控制期間 master 游標真正消失（透明 overlay + 1×1 ClipCursor）。v0.4：UI 與系統匣中英文、Inno Setup 標準安裝/解除安裝。完整成果見 [`docs/12-stage-summary.md`](docs/12-stage-summary.md)、[`docs/13-clipboard-and-cursor.md`](docs/13-clipboard-and-cursor.md)、[`docs/14-bilingual-and-inno.md`](docs/14-bilingual-and-inno.md)。
 
 ## 文件
 
@@ -17,28 +17,38 @@
 - [v0.2 安裝版 App（探索/配對/自動連線）](docs/11-app-installer.md)
 - [v0.2 階段成果：兩台實機驗收完成](docs/12-stage-summary.md)
 - [跨機剪貼簿與控制端游標隱藏（v0.3-clip）](docs/13-clipboard-and-cursor.md)
+- [中英文介面與 Inno Setup 安裝程式（v0.4）](docs/14-bilingual-and-inno.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 - [Logo 與品牌資產](assets/branding/gallery.html)（規範：`assets/branding/README.md`）
 
-## 安裝版（v0.3-clip3）
+## 安裝版（v0.4-inno）
 
 ```powershell
-# 單一安裝檔；內嵌 App 與 SYSTEM 服務（跨機剪貼簿 + 游標隱藏）
-dist-app\LAN-KVM-Setup-0.3-clip3.exe
+# Inno Setup 標準安裝程式；內含 App 與 SYSTEM 服務（中英文安裝精靈）
+dist-app\LAN-KVM-Setup-0.4-inno.exe
 
 # SHA-256
-# 5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1
+# 5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA
 ```
 
-> `-clip3` 修正**檔案貼上貼到舊檔**：`clipboard-win` 的檔案 setter 不會先清空剪貼簿，
-> Explorer 舊的 `Shell IDList Array` 會蓋過新設的 CF_HDROP，貼上就變成上一個檔案。
-> 現在寫入前會先 `EmptyClipboard`。
+> `0.4-inno` 是目前正式測試版：改用 Inno Setup，支援標準「新增/移除程式」、
+> 升級、`/SILENT`、安裝記錄；UI 可在右上角切換 **中文 / English**（預設跟隨系統語系）。
 >
-> `-clip2` 修正回音抑制：精確剪貼簿序號 + 3 秒內容窗，貼上後立刻複製的新內容不會被吞掉；
-> log 會列出傳送的檔名與落地資料夾。
+> 上一版自製 setup 保留為 `dist-app\LAN-KVM-Setup-0.3-clip3.exe`
+> （`5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1`），
+> 內容相同但沒有標準卸載流程。
 >
 > v0.2 已驗收的登入頁版本保留為 `dist-app\LAN-KVM-Setup-0.2-login3.exe`
 > （`8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3`）。
+
+建置安裝程式：
+
+```powershell
+cargo build --release -p lankvm-app -p lankvm-service
+installer\build.cmd
+```
+
+細節見 [`docs/14-bilingual-and-inno.md`](docs/14-bilingual-and-inno.md)。
 
 安裝後常駐系統匣（Windows 11 可能在 `^` 裡，第一次拖到工作列固定）：
 

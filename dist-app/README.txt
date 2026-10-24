@@ -1,8 +1,9 @@
-LAN-KVM 0.3（測試版）
+LAN-KVM 0.4（測試版）
 =====================
 
-這是一個**單一安裝檔**：LAN-KVM-Setup-0.3-clip3.exe
+這是一個**單一安裝檔**：LAN-KVM-Setup-0.4-inno.exe
 App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
+安裝精靈有 English / 繁體中文可選；程式 UI 右上角也可隨時切換語言。
 
 需求
 ----
@@ -12,7 +13,7 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝
 ----
 1. 建議先從系統匣右鍵「停止連線」再安裝（避免升級時中斷遠端控制）。
-2. 執行 LAN-KVM-Setup-0.3-clip3.exe（會跳 UAC，按「是」）。
+2. 執行 LAN-KVM-Setup-0.4-inno.exe（會跳 UAC，按「是」）。
 3. 安裝到 C:\Program Files\LAN-KVM，並自動：
    - 建立防火牆規則：UDP 45870 / 45871 / 45872、TCP 45873（log 回傳）、TCP 45875（剪貼簿）
    - 安裝並啟動 LAN-KVM SYSTEM 服務（登入畫面 / UAC），session agent 不顯示 console
@@ -33,6 +34,12 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
   - 收集紀錄
   - 結束
 - 開機時以 --silent 啟動，只顯示系統匣，不會自動開瀏覽器。
+
+語言
+----
+- UI 右上角有「中文 / English」可切換，選擇會記在瀏覽器裡。
+- 第一次開啟時跟著系統語系：中文系統顯示中文，其他顯示 English。
+- 系統匣右鍵選單跟著 **Windows 顯示語言**，和 UI 的切換無關。
 
 第一次配對
 ----------
@@ -133,13 +140,15 @@ B 先開機 / IP 變更
 
 移除程式
 --------
-1. 系統匣右鍵「結束」。
-2. 以管理員執行：
-   "C:\Program Files\LAN-KVM\lankvm-service.exe" uninstall
-3. 刪除 C:\Program Files\LAN-KVM。
-4. 刪除登錄檔 HKCU\Software\Microsoft\Windows\CurrentVersion\Run 的 LAN-KVM。
-5. 刪除防火牆規則：LAN-KVM Discovery / Control / Data / Logs / Clipboard。
-6. 刪除桌面與開始功能表的 LAN-KVM 捷徑。
+- 用 Windows「設定 → 應用程式 → 已安裝的應用程式」找到 **LAN-KVM 0.4.0** 按解除安裝，
+  或執行開始功能表的「解除安裝 LAN-KVM」。
+- 解除安裝會自動：結束常駐程式、移除 SYSTEM 服務、刪除兩個開機排程、
+  刪除防火牆規則、移除登入自動啟動。
+- 保留（可手動刪除）：
+  %LOCALAPPDATA%\LAN-KVM\app.json（配對與設定）
+  C:\ProgramData\LAN-KVM\config.txt、logs\（診斷用）
+
+> 舊版（`0.3-clip3` 以前的自製 setup）沒有標準卸載流程，請改用 0.4 版安裝後再解除安裝。
 
 目前限制
 --------
@@ -164,5 +173,5 @@ B 先開機 / IP 變更
   2. 登入 B 後 `sc query LAN-KVM` 必須 RUNNING。
   3. `service.log` 要有 `identity announce`、`started session agent`；
      `session.log` 要有 `session agent started`、`winjector prestarted`。
-  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-0.3-clip3.exe`。
+  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-0.4-inno.exe`。
 - 安裝失敗：看 %TEMP%\lankvm-setup.log。

@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
@@ -123,12 +124,35 @@ fn status_text(app: &Arc<App>) -> String {
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     match session {
-        Some(session) if session.role == "master" => format!("LAN-KVM - 主控中 ({})", session.peer_ip),
-        Some(_) => "LAN-KVM - 被控中（SYSTEM 服務）".to_string(),
-        None if !app.service_ok.load(Ordering::Relaxed) => {
-            "LAN-KVM - client 服務未就緒".to_string()
+        Some(session) if session.role == "master" => {
+            format!("LAN-KVM - {} ({})", tr("主控中", "Controlling"), session.peer_ip)
         }
-        None => "LAN-KVM - 待機".to_string(),
+        Some(_) => tr(
+            "LAN-KVM - 被控中（SYSTEM 服務）",
+            "LAN-KVM - Controlled (SYSTEM service)",
+        )
+        .to_string(),
+        None if !app.service_ok.load(Ordering::Relaxed) => {
+            tr("LAN-KVM - client 服務未就緒", "LAN-KVM - client service not ready").to_string()
+        }
+        None => tr("LAN-KVM - 待機", "LAN-KVM - Idle").to_string(),
+    }
+}
+
+/// The tray menu follows the Windows UI language (not the web UI setting).
+fn ui_is_zh() -> bool {
+    static ZH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ZH.get_or_init(|| {
+        let lang = unsafe { GetUserDefaultUILanguage() } as u32;
+        (lang & 0x3ff) == 0x04
+    })
+}
+
+fn tr(zh_text: &'static str, en_text: &'static str) -> &'static str {
+    if ui_is_zh() {
+        zh_text
+    } else {
+        en_text
     }
 }
 
@@ -192,9 +216,9 @@ unsafe fn show_menu(hwnd: HWND) {
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, status_w.as_ptr());
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
 
-    let open = wide("開啟設定");
+    let open = wide(tr("開啟設定", "Open settings"));
     AppendMenuW(menu, MF_STRING, ID_OPEN, open.as_ptr());
-    let scan = wide("重新掃描");
+    let scan = wide(tr("重新掃描", "Rescan"));
     AppendMenuW(menu, MF_STRING, ID_SCAN, scan.as_ptr());
 
     let has_session = app
@@ -203,16 +227,16 @@ unsafe fn show_menu(hwnd: HWND) {
         .unwrap_or_else(|e| e.into_inner())
         .is_some();
     let connect_label = if has_session {
-        wide("停止連線")
+        wide(tr("停止連線", "Stop connection"))
     } else {
-        wide("重新連線")
+        wide(tr("重新連線", "Reconnect"))
     };
     AppendMenuW(menu, MF_STRING, ID_CONNECT, connect_label.as_ptr());
 
-    let logs = wide("收集紀錄");
+    let logs = wide(tr("收集紀錄", "Collect logs"));
     AppendMenuW(menu, MF_STRING, ID_LOGS, logs.as_ptr());
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
-    let quit = wide("結束");
+    let quit = wide(tr("結束", "Quit"));
     AppendMenuW(menu, MF_STRING, ID_QUIT, quit.as_ptr());
 
     let mut point = POINT { x: 0, y: 0 };
