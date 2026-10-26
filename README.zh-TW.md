@@ -117,7 +117,7 @@ cargo build -p lankvm-devtools
 - [兩台實機驗收總結](docs/12-stage-summary.md)
 - [跨機剪貼簿與游標隱藏（v0.3）](docs/13-clipboard-and-cursor.md)
 - [中英文介面與 Inno Setup 安裝程式（v0.4）](docs/14-bilingual-and-inno.md)
-- [延遲與「跳回」修正（v1.1）](docs/15-latency-and-reconnect.md)
+- [延遲與「跳回」修正（v1.1.1–1.1.6）](docs/15-latency-and-reconnect.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 
 ## 已知限制

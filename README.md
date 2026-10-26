@@ -124,7 +124,7 @@ cargo build -p lankvm-devtools
 - [Two-machine acceptance summary](docs/12-stage-summary.md)
 - [Clipboard sync and cursor hiding (v0.3)](docs/13-clipboard-and-cursor.md)
 - [Bilingual UI and Inno Setup installer (v0.4)](docs/14-bilingual-and-inno.md)
-- [Latency and reconnect fixes (v1.1)](docs/15-latency-and-reconnect.md)
+- [Latency and reconnect fixes (v1.1.1–1.1.6)](docs/15-latency-and-reconnect.md)
 - [AV / EDR and code signing strategy](docs/04-av-and-signing.md)
 
 Most documents are written in Traditional Chinese.

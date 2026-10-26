@@ -160,7 +160,7 @@ B 先開機 / IP 變更
   %LOCALAPPDATA%\LAN-KVM\app.json（配對與設定）
   C:\ProgramData\LAN-KVM\config.txt、logs\（診斷用）
 
-> 舊版（`0.3-clip3` 以前的自製 setup）沒有標準卸載流程，請改用 0.4 版安裝後再解除安裝。
+> 舊版（`0.3-clip3` 以前的自製 setup）沒有標準卸載流程，請先安裝新版（1.1.x）後再解除安裝。
 
 目前限制
 --------
@@ -175,8 +175,8 @@ B 先開機 / IP 變更
 - 掃不到對方：確認同網段、兩台都開著、AP 沒有 client isolation。
 - 配對碼視窗沒出現：在 B 開啟 LAN-KVM。
 - 連線中斷：系統匣右鍵「收集紀錄」。
-- **貼上檔案卻是上一個檔案**：這是 `-clip3` 修掉的問題（寫入前沒有清空剪貼簿，
-  Explorer 貼上時用到舊的 Shell IDList）。請確認兩台都是 `-clip3`。
+- **貼上檔案卻是上一個檔案**：已在 `-clip3` 之後的版本修掉（寫入前沒有清空剪貼簿，
+  Explorer 貼上時用到舊的 Shell IDList）。請確認兩台都是 `1.1.x`。
   驗證時用檔名不同的檔案，並看 app.log 的 `clipboard received: files (1) [檔名]`。
 - 登入畫面無法控制：確認 sc query LAN-KVM 是 RUNNING，且 service.log 有
   Winlogon: injector active。

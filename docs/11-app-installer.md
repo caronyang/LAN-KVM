@@ -240,15 +240,18 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-1.1.0.exe       (見 dist-app；v1.1 延遲/跳回修正)
+  LAN-KVM-Setup-1.1.6.exe       FC7284C8E9660E42A0A1DDB8614750784B605999691796CE0F065EB647B6F162
+  LAN-KVM-Setup-1.0.0.exe       C399AE8ABC1B810C602E2933F3174A8F5136376C16FBF22B7913169B648B27E0
   LAN-KVM-Setup-0.4-inno.exe    5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA
   LAN-KVM-Setup-0.3-clip3.exe   5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1
   LAN-KVM-Setup-0.2-login3.exe  8A622E5A9739429E6A77CD59916CB8FF57E7534C9690DEEF13C6C24B59D3EAD3
   README.txt
 ```
 
-> **v1.0.0 是首個公開發佈版**（Inno Setup，預設英文 UI，可切換繁體中文）。
-> 建置方式與安裝/解除安裝細節見 [`docs/14-bilingual-and-inno.md`](14-bilingual-and-inno.md)。
+> **`1.1.6` 是目前版本**（延遲／跳回／鍵盤／緊急取回修正，公開 release `v1.1.6`）。
+> `v1.0.0` 是首個公開發佈版。建置方式與安裝/解除安裝細節見
+> [`docs/14-bilingual-and-inno.md`](14-bilingual-and-inno.md)、
+> [`docs/15-latency-and-reconnect.md`](15-latency-and-reconnect.md)。
 >
 > `0.4-inno` 是上一個候選版；`0.3-clip3` 為自製 self-extract setup；
 > `0.2-login3` 為已驗收的登入頁版本。
