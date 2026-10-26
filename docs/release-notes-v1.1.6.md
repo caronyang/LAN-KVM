@@ -1,4 +1,4 @@
-# LAN-KVM 1.1.5
+# LAN-KVM 1.1.6
 
 Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 1.1.0 keepalive regression, and a fix for `Shift + /` on the controlled machine.
@@ -7,7 +7,7 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 
 | File | Size | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.5.exe` | 2.96 MB | `45ECBF85133E7617D7D92A0249C616A172884D2AD1B6332C09B9ADE213C18010` |
+| `LAN-KVM-Setup-1.1.6.exe` | 2.96 MB | `FC7284C8E9660E42A0A1DDB8614750784B605999691796CE0F065EB647B6F162` |
 
 ## What changed
 
@@ -78,6 +78,14 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 - The service and session agent now log Rust panics to `service.log`
   (`PANIC: ...`), which explains the `0xc0000409` WER entries seen at boot.
 
+**1.1.6 external watchdog**
+
+- The app now watches `engine.log`'s modification time. A healthy engine writes
+  a `[net]` line every 5 s; if the file is silent for 15 s while a master engine
+  is alive, the app force-releases and kills the engine. This works even when
+  every hotkey is unavailable.
+- The check is skipped once if the app itself was suspended (system sleep).
+
 **Diagnostics**
 
 - `engine.log` every 5 s: `[net] tx/rx/rtt/rtt_max/motion/silent/remote`.
@@ -110,7 +118,7 @@ Ethernet on the client is still the single biggest improvement.
 
 | 檔案 | 大小 | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.5.exe` | 2.96 MB | `45ECBF85133E7617D7D92A0249C616A172884D2AD1B6332C09B9ADE213C18010` |
+| `LAN-KVM-Setup-1.1.6.exe` | 2.96 MB | `FC7284C8E9660E42A0A1DDB8614750784B605999691796CE0F065EB647B6F162` |
 
 ## 修改內容
 

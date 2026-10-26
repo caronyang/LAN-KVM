@@ -796,8 +796,15 @@ pub fn send_session_stop(app: &Arc<App>, peer_ip: &str, peer_id: &str) {    let 
 fn start_supervisor(app: Arc<App>) {
     thread::spawn(move || {
         let mut last_keepalive = Instant::now();
+        let mut last_tick = Instant::now();
         loop {
             thread::sleep(Duration::from_secs(2));
+
+            // If this thread itself was suspended (system sleep), the engine
+            // log will look stale on resume; skip one round.
+            let suspended = last_tick.elapsed() > Duration::from_secs(6);
+            last_tick = Instant::now();
+
 
             // Pairing codes expire; otherwise the host UI would stay modal.
             let expired = {
@@ -838,6 +845,29 @@ fn start_supervisor(app: Arc<App>) {
                     *app.session.lock().unwrap_or_else(|e| e.into_inner()) = None;
                     app.log("client session cleared (service down or master gone)");
                     continue;
+                }
+
+                // External watchdog: a healthy engine writes a [net] line every
+                // 5 s. If the log has been silent for 15 s while we believe a
+                // master session is running, it is wedged; kill it so Windows
+                // releases ClipCursor / the cursor hider even if every hotkey
+                // failed to register.
+                let is_master_engine = snapshot
+                    .as_ref()
+                    .map(|s| s.role == "master" && !s.uses_service)
+                    .unwrap_or(false);
+                if is_master_engine && alive && !suspended {
+                    let stale = std::fs::metadata(crate::engine::engine_log_path())
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.elapsed().ok())
+                        .map(|age| age > Duration::from_secs(15))
+                        .unwrap_or(false);
+                    if stale {
+                        app.log("engine log stalled for 15 s; forcing emergency release");
+                        crate::engine::emergency_release(&app, "engine stalled");
+                        continue;
+                    }
                 }
 
                 // Keep telling the client to run. If its engine died, this

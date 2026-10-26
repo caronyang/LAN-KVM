@@ -1,9 +1,9 @@
 # 延遲與「跳回」修正（v1.1）
 
 > 日期：2026-10-26
-> 版本：`1.1.5`
-> 產物：`dist-app/LAN-KVM-Setup-1.1.5.exe`
-> SHA-256：`45ECBF85133E7617D7D92A0249C616A172884D2AD1B6332C09B9ADE213C18010`
+> 版本：`1.1.6`
+> 產物：`dist-app/LAN-KVM-Setup-1.1.6.exe`
+> SHA-256：`FC7284C8E9660E42A0A1DDB8614750784B605999691796CE0F065EB647B6F162`
 
 > **1.1.1 熱修**：1.1.0 新增的 keepalive 會打到已關閉的 UDP 埠，Windows 回應 ICMP
 > port-unreachable，client 的接收迴圈以 `WSAECONNRESET / WSAETIMEDOUT` 結束，
@@ -400,3 +400,40 @@ heartbeat 執行緒因此停止 → **timeout 永遠不會觸發**。
 - `cargo test -p lankvm-platform`：新增熱鍵修飾鍵的單元測試（三個鍵缺一不可）。
 - 熱鍵註冊：`app.log` 應有 `tray: emergency hotkey Ctrl+Alt+Shift+R registered`。
 - 控制中按 `Ctrl+Alt+Shift+Q` 或 `R`：engine 會立刻 `remote control OFF (hotkey...)`。
+
+---
+
+## 11. 1.1.6：外部 watchdog（連熱鍵都失效時）
+
+### 11.1 為什麼還要一層
+
+1.1.5 修好了 engine 熱鍵與 App 熱鍵重試，但仍有兩個極端情況：
+
+- engine **完全卡死**（熱鍵 hook 也不會被呼叫）。
+- App 的熱鍵註冊**一直失敗**（例如系統上另一個程式佔用同組合）。
+
+### 11.2 做法
+
+健康的 engine 在控制期間每 5 秒會寫一行 `[net] ...` 到 `engine.log`
+（待機也一樣）。App 的 supervisor 每 2 秒檢查該檔案的**最後修改時間**：
+
+- 若 master engine 還活著，但 `engine.log` **超過 15 秒沒有更新** →
+  判定 engine 卡死 → 自動 `emergency_release("engine stalled")`：
+  寫 stop file、3 秒後強制 kill，游標一定回來，並在 60 秒內不自動重連。
+- 若 **App 自己被系統休眠** 過（這一輪間隔 > 6 秒），跳過一次檢查，
+  避免睡醒後誤殺。
+
+### 11.3 現在的四層保護
+
+| 層 | 觸發條件 | 動作 |
+|---|---|---|
+| engine watchdog | 10 秒沒封包 | 正常釋放 |
+| engine watchdog（硬） | 釋放後 5 秒仍無效 | 結束 engine |
+| App 熱鍵 / UI / tray | 手動 | 終止 engine + 60 秒不重連 |
+| **App 外部 watchdog** | engine.log 15 秒沒更新 | 同上 |
+
+### 11.4 驗證
+
+- 控制中把 engine 行程「暫止」（Sysinternals Process Explorer → Suspend）：
+  15–17 秒內 App 應寫 `engine log stalled for 15 s; forcing emergency release`、
+  `engine master stopped`，游標回來。

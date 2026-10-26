@@ -198,6 +198,9 @@ pub fn emergency_release(app: &Arc<App>, reason: &str) {
         "EMERGENCY release ({reason}){}",
         if had_session { "" } else { " - no active session" }
     ));
+    if !had_session {
+        return;
+    }
     // stop_session writes the stop file, waits up to 3 s, then kills the
     // engine. Killing it is what guarantees the cursor comes back even if the
     // engine's message loop is wedged.

@@ -1,7 +1,7 @@
-LAN-KVM 1.1.5
+LAN-KVM 1.1.6
 ==========
 
-這是一個**單一安裝檔**：LAN-KVM-Setup-1.1.5.exe
+這是一個**單一安裝檔**：LAN-KVM-Setup-1.1.6.exe
 App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝精靈有 English / 繁體中文可選；程式 UI 預設 English，右上角可切換中文。
 
@@ -13,7 +13,7 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝
 ----
 1. 建議先從系統匣右鍵「停止連線」再安裝（避免升級時中斷遠端控制）。
-2. 執行 LAN-KVM-Setup-1.1.5.exe（會跳 UAC，按「是」）。
+2. 執行 LAN-KVM-Setup-1.1.6.exe（會跳 UAC，按「是」）。
 3. 安裝到 C:\Program Files\LAN-KVM，並自動：
    - 建立防火牆規則：UDP 45870 / 45871 / 45872、TCP 45873（log 回傳）、TCP 45875（剪貼簿）
    - 安裝並啟動 LAN-KVM SYSTEM 服務（登入畫面 / UAC），session agent 不顯示 console
@@ -152,7 +152,7 @@ B 先開機 / IP 變更
 
 移除程式
 --------
-- 用 Windows「設定 → 應用程式 → 已安裝的應用程式」找到 **LAN-KVM 1.1.5.0** 按解除安裝，
+- 用 Windows「設定 → 應用程式 → 已安裝的應用程式」找到 **LAN-KVM 1.1.6.0** 按解除安裝，
   或執行開始功能表的「解除安裝 LAN-KVM」。
 - 解除安裝會自動：結束常駐程式、移除 SYSTEM 服務、刪除兩個開機排程、
   刪除防火牆規則、移除登入自動啟動。
@@ -185,5 +185,5 @@ B 先開機 / IP 變更
   2. 登入 B 後 `sc query LAN-KVM` 必須 RUNNING。
   3. `service.log` 要有 `identity announce`、`started session agent`；
      `session.log` 要有 `session agent started`、`winjector prestarted`。
-  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-1.1.5.exe`。
+  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-1.1.6.exe`。
 - 安裝失敗：看 %TEMP%\lankvm-setup.log。
