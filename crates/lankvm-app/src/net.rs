@@ -288,7 +288,11 @@ fn start_discovery(app: Arc<App>, port: u16) -> Result<()> {
                 Err(err)
                     if matches!(
                         err.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        std::io::ErrorKind::WouldBlock
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionAborted
+                            | std::io::ErrorKind::ConnectionRefused
                     ) => {}
                 Err(_) => break,
             }
@@ -314,7 +318,11 @@ fn start_control(app: Arc<App>, port: u16) -> Result<()> {
                 Err(err)
                     if matches!(
                         err.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        std::io::ErrorKind::WouldBlock
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionAborted
+                            | std::io::ErrorKind::ConnectionRefused
                     ) => {}
                 Err(_) => break,
             }

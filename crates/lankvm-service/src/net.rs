@@ -49,7 +49,11 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
     let mut edge_hits = 0u32;
     let mut bounds = None;
     let mut last_desktop_gen = desktop::generation();
-    let mut master_addr: Option<SocketAddr> = None;
+    // Only send unsolicited keepalives to an address that recently sent us
+    // real input. Local health probes use a short-lived socket; replying to
+    // them would earn an ICMP port-unreachable and kill this loop with
+    // WSAECONNRESET (10054).
+    let mut keepalive_to: Option<(SocketAddr, Instant)> = None;
     let mut last_keepalive = Instant::now();
     let mut last_packet = Instant::now();
     let mut last_stats = Instant::now();
@@ -70,9 +74,12 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         }
 
         // Unsolicited keepalive: the master's timeout must not depend on its
-        // own PING surviving a Wi-Fi stall.
-        if let Some(addr) = master_addr {
-            if last_keepalive.elapsed() >= Duration::from_millis(500) {
+        // own PING surviving a Wi-Fi stall. Stop after 5 s without real input
+        // so we never spray a dead port.
+        if let Some((addr, since)) = keepalive_to {
+            if since.elapsed() > Duration::from_secs(5) {
+                keepalive_to = None;
+            } else if last_keepalive.elapsed() >= Duration::from_millis(500) {
                 last_keepalive = Instant::now();
                 let mut pong = Packet::new(PacketKind::Pong, seq);
                 seq = seq.wrapping_add(1);
@@ -98,14 +105,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
 
         let (n, addr) = match socket.recv_from(&mut buf) {
             Ok(value) => value,
-            Err(err)
-                if matches!(
-                    err.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                ) =>
-            {
-                continue
-            }
+            Err(err) if is_ignorable_udp_error(&err) => continue,
             Err(err) => {
                 log("session", format!("UDP receive failed: {err}"));
                 break;
@@ -115,7 +115,6 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         let Some(packet) = Packet::decode(&buf[..n]) else {
             continue;
         };
-        master_addr = Some(addr);
         {
             let now = Instant::now();
             let gap = now.duration_since(last_packet).as_millis() as u64;
@@ -124,6 +123,12 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
             }
             last_packet = now;
             rx_packets += 1;
+        }
+        // A local health probe is a bare Ping from a short-lived socket. Only
+        // real input packets arm the keepalive, so we never reply to a probe
+        // port that is already closed.
+        if !matches!(packet.kind, PacketKind::Ping | PacketKind::Pong) {
+            keepalive_to = Some((addr, Instant::now()));
         }
 
         match packet.kind {
@@ -254,4 +259,25 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
     }
 
     log("session", "UDP client stopped");
+    // A fatal socket error leaves us alive but deaf; the service considers
+    // that a healthy process and waits 30 s before restarting. Exit so it can
+    // relaunch immediately instead.
+    if !stop.load(Ordering::SeqCst) {
+        log("session", "UDP client ended unexpectedly; exiting session agent");
+        std::process::exit(1);
+    }
+}
+
+/// Windows reports ICMP port-unreachable for a previous send as
+/// WSAECONNRESET on the *next* UDP receive. That is normal for UDP and must
+/// not kill the listener.
+fn is_ignorable_udp_error(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::WouldBlock
+            | io::ErrorKind::TimedOut
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionRefused
+    )
 }

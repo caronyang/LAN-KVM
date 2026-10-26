@@ -1,9 +1,14 @@
 # 延遲與「跳回」修正（v1.1）
 
 > 日期：2026-10-26
-> 版本：`1.1.0`
-> 產物：`dist-app/LAN-KVM-Setup-1.1.0.exe`
-> SHA-256：`EABF52D0671A5241A0626CDA8C73C94A2CB3AA3F436D6B0B408D89C74E2CF712`
+> 版本：`1.1.1`（1.1.0 的 keepalive 熱修）
+> 產物：`dist-app/LAN-KVM-Setup-1.1.1.exe`
+> SHA-256：`226B5847E7D822935114C4BBF63AEC3054DC64A9C92E14F076A174DE1EDC5640`
+
+> **1.1.1 熱修**：1.1.0 新增的 keepalive 會打到已關閉的 UDP 埠，Windows 回應 ICMP
+> port-unreachable，client 的接收迴圈以 `WSAECONNRESET / WSAETIMEDOUT` 結束，
+> 造成兩台的 session agent 反覆被重啟（每 20–30 秒），使用起來就是「兩邊都卡住」。
+> 修正內容見第 6 節。
 
 這一版只做一件事：把實機使用時的**卡頓**與**控制突然跳回**修掉。
 所有改動都來自 2026-10-24 的兩份 log（`LAN-KVM-logs-LAPTOP-...-1792815010`）。
@@ -166,3 +171,61 @@ powercfg /setactive SCHEME_MIN
   舊 master 收到新 client 的 `a=0` keepalive 只會多印一行很大的 RTT，不影響功能。
 - `release_px` 在 client 端生效（`C:\ProgramData\LAN-KVM\config.txt`）；
   App 的 UI 欄位一併改預設 10，舊 `app.json` 的 2 會自動遷移。
+
+---
+
+## 6. 1.1.1 熱修：keepalive 造成 agent 反覆重啟
+
+### 6.1 症狀
+
+- 一開始正常，過一小段時間**兩邊的滑鼠都不動、游標像消失**，一陣子又突然可用。
+- `app.log`（兩台）每 15–20 秒 `client engine not ready` → `ready` → `not ready`。
+- B 的 `service.log`：
+
+```
+client health probe failed (1/6) ... (6/6)
+restarting session agent: UDP client not responding
+```
+
+- B 的 `session.log`：
+
+```
+UDP receive failed: 遠端主機已強制關閉一個現存的連線 (os error 10054)
+UDP client stopped
+```
+
+### 6.2 根因
+
+1.1.0 讓 client 每 500 ms 主動送 keepalive（`Pong`）給「最後一次收到封包的來源位址」。
+但那個位址可能是：
+
+- 已經關閉的本機健康檢查 socket（服務每 5 秒用一個臨時 UDP socket ping 自己），或
+- 已經結束/重啟的 master engine（ephemeral port 已釋放）。
+
+UDP 送到關閉的埠，Windows 會回 **ICMP port unreachable**；下一個 `recv_from`
+就會得到 `WSAECONNRESET (10054)` 或 `WSAETIMEDOUT (10060)`。
+舊程式把這個當成致命錯誤 → 接收迴圈結束 → **process 還活著但沒有 listener** →
+服務的健康檢查失敗 → 30 秒後殺掉重啟 → 新 agent 又被 keepalive 打死 → 無限循環。
+
+master 端同理：PING 打到已關閉的資料埠時，接收執行緒也可能被 ICMP 打死。
+
+### 6.3 修正
+
+| 位置 | 修正 |
+|---|---|
+| client keepalive | 只有收到**真正的輸入封包**（Hello/Switch/Motion/Button/Key/Wheel/Release）才啟動；**5 秒內沒有新輸入就停止**。單純的 Ping（健康檢查）不再啟動 keepalive |
+| UDP 錯誤處理 | `WouldBlock / TimedOut / ConnectionReset / ConnectionAborted / ConnectionRefused` 一律視為「掉一個封包」繼續，不再結束迴圈 |
+| agent 生命週期 | 若接收迴圈真的因其他錯誤結束，**讓 agent 直接退出**，服務 5 秒內就會重啟（不再留下 30 秒的殭屍） |
+| master 接收 | 同樣忽略 ICMP 造成的錯誤 |
+| App 的 discovery / control UDP | 同樣忽略上述錯誤，避免控制通道被 ICMP 打掉 |
+
+### 6.4 驗證
+
+- 用一個臨時 UDP socket 送一個 Motion 封包後立刻關閉（模擬「master 消失」），
+  再讓 client 對它送 keepalive：**client 程序仍存活**（修正前會以 10060 結束）。
+- master 在目標埠完全沒有 listener 的情況下啟動 3 秒（每次 PING 都收到 ICMP），
+  之後再啟動 client：master 正確顯示 `client online`、`rtt=1 ms`（接收執行緒沒死）。
+
+### 6.5 這次一併調整
+
+- `release_px` 舊值 1 或 2 一律視為 10（`config.txt` 與 `app.json` 都適用）。

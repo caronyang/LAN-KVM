@@ -290,15 +290,19 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
     let mut seq = 0u32;
     let mut master_addr: Option<SocketAddr> = None;
+    let mut keepalive_to: Option<(SocketAddr, Instant)> = None;
     let mut last_keepalive = Instant::now();
     let mut buf = [0u8; 64];
 
     while !stop.load(Ordering::SeqCst) && !STOP_REQUESTED.load(Ordering::SeqCst) {
         // Unsolicited keepalive so the master's liveness does not depend on its
-        // PING surviving the network.
-        if master_addr.is_some() && last_keepalive.elapsed() >= Duration::from_millis(500) {
-            last_keepalive = Instant::now();
-            if let Some(addr) = master_addr {
+        // PING surviving the network. Only armed by real input, and dropped
+        // after 5 s, so we never spray a closed port (ICMP -> WSAECONNRESET).
+        if let Some((addr, since)) = keepalive_to {
+            if since.elapsed() > Duration::from_secs(5) {
+                keepalive_to = None;
+            } else if last_keepalive.elapsed() >= Duration::from_millis(500) {
+                last_keepalive = Instant::now();
                 let mut pong = Packet::new(PacketKind::Pong, seq);
                 seq = seq.wrapping_add(1);
                 pong.a = 0;
@@ -308,14 +312,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
 
         let (n, addr) = match socket.recv_from(&mut buf) {
             Ok(value) => value,
-            Err(err)
-                if matches!(
-                    err.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                ) =>
-            {
-                continue
-            }
+            Err(err) if is_ignorable_udp_error(&err) => continue,
             Err(err) => return Err(err).context("client UDP receive failed"),
         };
 
@@ -323,6 +320,9 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
             continue;
         };
         master_addr = Some(addr);
+        if !matches!(packet.kind, PacketKind::Ping | PacketKind::Pong) {
+            keepalive_to = Some((addr, Instant::now()));
+        }
 
         match packet.kind {
             PacketKind::Hello => {
@@ -567,7 +567,11 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
             Err(err)
                 if matches!(
                     err.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::ConnectionReset
+                        | io::ErrorKind::ConnectionAborted
+                        | io::ErrorKind::ConnectionRefused
                 ) =>
             {
                 continue
@@ -1034,6 +1038,20 @@ fn now_ms() -> u64 {
         .get()
         .map(|start| start.elapsed().as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Windows surfaces ICMP port-unreachable as WSAECONNRESET (or a one-off
+/// WSAETIMEDOUT) on the next UDP receive. Treat those, and the read timeout,
+/// as a lost datagram, not a fatal error.
+fn is_ignorable_udp_error(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::WouldBlock
+            | io::ErrorKind::TimedOut
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionRefused
+    )
 }
 
 fn reason_code(reason: &str) -> i32 {
