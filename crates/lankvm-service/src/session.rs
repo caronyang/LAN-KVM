@@ -88,7 +88,10 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     }
 
     if client {
-        let release_px = crate::config::load().release_px.unwrap_or(2);
+        // 2 px was the old default and released on the slightest edge touch.
+        // Treat it as "not configured" even when config.txt was not migrated.
+        let configured = crate::config::load().release_px.unwrap_or(10);
+        let release_px = if configured <= 2 { 10 } else { configured.max(6) };
         if let Err(err) = net::start_client(port, stop.clone(), release_px) {
             log("session", format!("UDP client failed: {err:#}"));
             // Exit so the service health check can restart a clean agent

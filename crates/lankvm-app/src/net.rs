@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -45,6 +46,77 @@ fn send_to(app: &Arc<App>, value: &Value, ip: IpAddr, port: u16) {
 
 fn parse_or(ip: &str) -> IpAddr {
     ip.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
+}
+
+/// Reject addresses that cannot be a reachable peer. This matters on machines
+/// with several adapters (Wi-Fi Direct, VPN, VirtualBox): a discovery packet
+/// can arrive from an APIPA address during a DHCP hiccup, and accepting it used
+/// to tear down a working session.
+fn is_usable_peer_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            !(v4.is_unspecified()
+                || v4.is_loopback()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || v4.is_link_local())
+        }
+        IpAddr::V6(v6) => {
+            !(v6.is_unspecified()
+                || v6.is_loopback()
+                || v6.is_multicast()
+                || (v6.segments()[0] & 0xffc0) == 0xfe80)
+        }
+    }
+}
+
+/// Accept a new address only after two consecutive announcements, so a single
+/// stray packet from another interface cannot move the peer.
+fn ip_change_confirmed(id: &str, ip: &str) -> bool {
+    static PENDING: OnceLock<Mutex<HashMap<String, (String, u8)>>> = OnceLock::new();
+    let map = PENDING.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = map.lock().unwrap_or_else(|e| e.into_inner());
+    match map.get_mut(id) {
+        Some((current, count)) if current == ip => {
+            *count = count.saturating_add(1);
+            if *count >= 2 {
+                map.remove(id);
+                true
+            } else {
+                false
+            }
+        }
+        _ => {
+            map.insert(id.to_string(), (ip.to_string(), 1));
+            false
+        }
+    }
+}
+
+/// P0 liveness check against a peer's data port (answered by the SYSTEM
+/// service). Used to decide whether an announced address change requires
+/// restarting the running session.
+fn peer_reachable(ip: &str, port: u16) -> bool {
+    if port == 0 {
+        return false;
+    }
+    let Ok(addr) = format!("{ip}:{port}").parse::<SocketAddr>() else {
+        return false;
+    };
+    let Ok(socket) = UdpSocket::bind(("0.0.0.0", 0)) else {
+        return false;
+    };
+    let _ = socket.set_read_timeout(Some(Duration::from_millis(400)));
+    let mut ping = lankvm_net::Packet::new(lankvm_net::PacketKind::Ping, 0);
+    ping.a = 0;
+    if socket.send_to(&ping.encode(), addr).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 64];
+    matches!(socket.recv_from(&mut buf), Ok((n, _))
+        if lankvm_net::Packet::decode(&buf[..n])
+            .map(|p| p.kind == lankvm_net::PacketKind::Pong)
+            .unwrap_or(false))
 }
 
 fn s(value: &Value, key: &str) -> String {
@@ -119,54 +191,78 @@ fn service_running(app: &Arc<App>) -> bool {
     let Ok(socket) = UdpSocket::bind(("127.0.0.1", 0)) else {
         return false;
     };
-    let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
+    let _ = socket.set_read_timeout(Some(Duration::from_millis(500)));
     let mut ping = lankvm_net::Packet::new(lankvm_net::PacketKind::Ping, 0);
     ping.a = 0;
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, app.data_port));
-    if socket.send_to(&ping.encode(), addr).is_err() {
-        return false;
+    // A busy agent can miss one datagram; try twice before declaring failure.
+    for _ in 0..2 {
+        if socket.send_to(&ping.encode(), addr).is_err() {
+            return false;
+        }
+        let mut buf = [0u8; 64];
+        if let Ok((n, _)) = socket.recv_from(&mut buf) {
+            if lankvm_net::Packet::decode(&buf[..n])
+                .map(|p| p.kind == lankvm_net::PacketKind::Pong && p.d == 1)
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        }
     }
-    let mut buf = [0u8; 64];
-    match socket.recv_from(&mut buf) {
-        Ok((n, _)) => lankvm_net::Packet::decode(&buf[..n])
-            .map(|p| p.kind == lankvm_net::PacketKind::Pong && p.d == 1)
-            .unwrap_or(false),
-        Err(_) => false,
-    }
+    false
 }
 
 fn start_service_watch(app: Arc<App>) {
-    thread::spawn(move || loop {
-        let running = service_running(&app);
-        let previous = app.service_ok.swap(running, Ordering::Relaxed);
-        if previous != running {
-            app.log(format!(
-                "client engine {}",
-                if running { "ready (SYSTEM service)" } else { "not ready" }
-            ));
-            if running {
-                // A restarted client engine means the master's remote state is
-                // stale. Ask it to stop and reconnect so the cursor is not
-                // stuck clipped on the master.
-                let has_session = app
-                    .session
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .is_some();
-                if has_session {
-                    let config = app
-                        .config
+    thread::spawn(move || {
+        let mut failures = 0u32;
+        loop {
+            let probed = service_running(&app);
+            let previous = app.service_ok.load(Ordering::Relaxed);
+            // Only flip to "not ready" after 3 consecutive misses (15 s).
+            // A single dropped local ping used to trigger a session_reset on
+            // the client, which stopped the master mid-session.
+            let running = if probed {
+                failures = 0;
+                true
+            } else {
+                failures += 1;
+                if previous {
+                    failures < 3
+                } else {
+                    false
+                }
+            };
+            if previous != running {
+                app.service_ok.store(running, Ordering::Relaxed);
+                app.log(format!(
+                    "client engine {}",
+                    if running { "ready (SYSTEM service)" } else { "not ready" }
+                ));
+                if running {
+                    // A restarted client engine means the master's remote state is
+                    // stale. Ask it to stop and reconnect so the cursor is not
+                    // stuck clipped on the master.
+                    let has_session = app
+                        .session
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
-                        .clone();
-                    if let Some(peer) = config.paired.iter().find(|p| p.role == "client") {
-                        let msg = base(&app, "session_reset");
-                        send_to(&app, &msg, parse_or(&peer.ip), peer.control_port);
+                        .is_some();
+                    if has_session {
+                        let config = app
+                            .config
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .clone();
+                        if let Some(peer) = config.paired.iter().find(|p| p.role == "client") {
+                            let msg = base(&app, "session_reset");
+                            send_to(&app, &msg, parse_or(&peer.ip), peer.control_port);
+                        }
                     }
                 }
             }
+            thread::sleep(Duration::from_secs(5));
         }
-        thread::sleep(Duration::from_secs(5));
     });
 }
 
@@ -262,6 +358,9 @@ fn start_announce(app: Arc<App>, port: u16) -> Result<()> {
 }
 
 fn handle_discovery(app: &Arc<App>, value: &Value, src: IpAddr) {
+    if !is_usable_peer_ip(src) {
+        return;
+    }
     let id = s(value, "id");
     if id.is_empty() {
         return;
@@ -300,6 +399,9 @@ fn handle_discovery(app: &Arc<App>, value: &Value, src: IpAddr) {
 /// This is what makes a DHCP change survivable: the persistent id stays the
 /// same, only the IP/ports are refreshed.
 fn update_paired_address(app: &Arc<App>, id: &str, ip: IpAddr, control: u16, data: u16) {
+    if !is_usable_peer_ip(ip) {
+        return;
+    }
     let new_ip = ip.to_string();
     let mut changed = false;
 
@@ -310,8 +412,11 @@ fn update_paired_address(app: &Arc<App>, id: &str, ip: IpAddr, control: u16, dat
             let ip_changed = old_ip != new_ip;
             let ports_changed = (control != 0 && peer.control_port != control)
                 || (data != 0 && peer.data_port != data);
-            if ip_changed || ports_changed {
-                peer.ip = new_ip.clone();
+            let accept_ip = ip_changed && ip_change_confirmed(id, &new_ip);
+            if accept_ip || ports_changed {
+                if accept_ip {
+                    peer.ip = new_ip.clone();
+                }
                 if control != 0 {
                     peer.control_port = control;
                 }
@@ -319,10 +424,10 @@ fn update_paired_address(app: &Arc<App>, id: &str, ip: IpAddr, control: u16, dat
                     peer.data_port = data;
                 }
                 save(app.profile.as_deref(), &config);
-                changed = true;
-            }
-            if ip_changed {
-                app.log(format!("peer {id} IP updated {old_ip} -> {new_ip}"));
+                changed = accept_ip;
+                if accept_ip {
+                    app.log(format!("peer {id} IP updated {old_ip} -> {new_ip}"));
+                }
             }
         }
     }
@@ -336,26 +441,37 @@ fn update_paired_address(app: &Arc<App>, id: &str, ip: IpAddr, control: u16, dat
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let needs_restart = session
-        .map(|session| {
-            session.role == "master"
-                && session.peer_id == id
-                && (session.peer_ip != new_ip
-                    || (data != 0 && session.data_port != data))
-        })
-        .unwrap_or(false);
-
-    if needs_restart {
-        let app = app.clone();
-        thread::spawn(move || {
-            crate::engine::stop_session(&app, false);
-            *app.suppress_until.lock().unwrap_or_else(|e| e.into_inner()) = None;
-            app.log("peer address changed; master stopped for a clean reconnect");
-        });
+    let Some(session) = session else {
+        return;
+    };
+    if session.role != "master" || session.peer_id != id {
+        return;
     }
+
+    // Do not tear down a working session just because an announcement came
+    // from a different address. Only reconnect when the old address no longer
+    // answers; otherwise keep running and use the new one on the next start.
+    let old_ip = session.peer_ip.clone();
+    let old_port = session.data_port;
+    if peer_reachable(&old_ip, old_port) {
+        app.log(format!(
+            "peer {id} announced {new_ip}; old address {old_ip} still answers, keeping the session"
+        ));
+        return;
+    }
+
+    let app = app.clone();
+    thread::spawn(move || {
+        crate::engine::stop_session(&app, false);
+        *app.suppress_until.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        app.log("peer address changed; master stopped for a clean reconnect");
+    });
 }
 
 fn handle_control(app: &Arc<App>, value: &Value, src: IpAddr) {
+    if !is_usable_peer_ip(src) {
+        return;
+    }
     let kind = s(value, "type");
     let id = s(value, "id");
     let own = app
@@ -827,4 +943,40 @@ fn start_supervisor(app: Arc<App>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v4(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn rejects_unusable_sources() {
+        assert!(!is_usable_peer_ip(v4("169.254.164.33")));
+        assert!(!is_usable_peer_ip(v4("127.0.0.1")));
+        assert!(!is_usable_peer_ip(v4("0.0.0.0")));
+        assert!(!is_usable_peer_ip(v4("255.255.255.255")));
+        assert!(!is_usable_peer_ip("224.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn accepts_lan_sources() {
+        assert!(is_usable_peer_ip(v4("192.168.68.69")));
+        assert!(is_usable_peer_ip(v4("10.1.2.3")));
+        assert!(is_usable_peer_ip(v4("172.16.0.9")));
+    }
+
+    #[test]
+    fn address_change_needs_two_announcements() {
+        let id = "test-peer-ip-change";
+        assert!(!ip_change_confirmed(id, "10.9.9.9"));
+        assert!(ip_change_confirmed(id, "10.9.9.9"));
+        // A different address restarts the counter.
+        assert!(!ip_change_confirmed(id, "10.9.9.10"));
+        assert!(!ip_change_confirmed(id, "10.9.9.11"));
+        assert!(ip_change_confirmed(id, "10.9.9.11"));
+    }
 }

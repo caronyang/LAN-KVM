@@ -203,7 +203,45 @@ fn injector_main(rx: Receiver<InjectEvent>, desktop: String, desktop_handle: isi
     }
 
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
-    while let Ok(event) = rx.recv() {
+    let mut pending: Option<InjectEvent> = None;
+    loop {
+        let event = match pending.take() {
+            Some(event) => event,
+            None => match rx.recv() {
+                Ok(event) => event,
+                Err(_) => break,
+            },
+        };
+
+        // Drain any queued motion into a single relative move. After a network
+        // stall the queue can hold hundreds of stale packets; replaying them
+        // one by one made the cursor lag and then jump.
+        if let InjectEvent::Motion { mut dx, mut dy } = event {
+            loop {
+                match rx.try_recv() {
+                    Ok(InjectEvent::Motion {
+                        dx: next_dx,
+                        dy: next_dy,
+                    }) => {
+                        dx = dx.saturating_add(next_dx);
+                        dy = dy.saturating_add(next_dy);
+                    }
+                    Ok(other) => {
+                        pending = Some(other);
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed);
+                        release_keys(&mut pressed);
+                        return;
+                    }
+                }
+            }
+            apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed);
+            continue;
+        }
+
         apply(&desktop, event, &mut pressed);
     }
     release_keys(&mut pressed);

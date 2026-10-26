@@ -5,11 +5,11 @@
 //! (including Winlogon). Production will use QUIC/TLS + pairing.
 
 use std::io;
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use lankvm_net::{Packet, PacketKind};
@@ -23,6 +23,10 @@ pub fn start_client(port: u16, stop: Arc<AtomicBool>, release_px: i32) -> Result
     let socket =
         UdpSocket::bind(("0.0.0.0", port)).with_context(|| format!("bind UDP port {port}"))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    // Large buffers absorb input bursts and Wi-Fi stalls.
+    let sock = socket2::SockRef::from(&socket);
+    let _ = sock.set_recv_buffer_size(1 << 20);
+    let _ = sock.set_send_buffer_size(1 << 20);
 
     log(
         "session",
@@ -34,17 +38,49 @@ pub fn start_client(port: u16, stop: Arc<AtomicBool>, release_px: i32) -> Result
 }
 
 fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
-    let release_px = release_px.max(1);
+    // 1-2 px was far too easy to trigger by accident; require a real push.
+    let release_px = release_px.max(6);
     let mut buf = [0u8; 64];
     let mut seq = 0u32;
     let mut last_hello = false;
     let mut controlled = false;
     let mut entry_edge = 1i32;
     let mut virtual_x = 0i32;
+    let mut edge_hits = 0u32;
     let mut bounds = None;
     let mut last_desktop_gen = desktop::generation();
+    let mut master_addr: Option<SocketAddr> = None;
+    let mut last_keepalive = Instant::now();
+    let mut last_packet = Instant::now();
+    let mut last_stats = Instant::now();
+    let mut rx_packets = 0u64;
+    let mut max_gap_ms = 0u64;
 
     while !stop.load(Ordering::SeqCst) {
+        if last_stats.elapsed() >= Duration::from_secs(5) {
+            last_stats = Instant::now();
+            log(
+                "session",
+                format!(
+                    "[net] rx={rx_packets} max_gap={max_gap_ms}ms controlled={controlled}"
+                ),
+            );
+            rx_packets = 0;
+            max_gap_ms = 0;
+        }
+
+        // Unsolicited keepalive: the master's timeout must not depend on its
+        // own PING surviving a Wi-Fi stall.
+        if let Some(addr) = master_addr {
+            if last_keepalive.elapsed() >= Duration::from_millis(500) {
+                last_keepalive = Instant::now();
+                let mut pong = Packet::new(PacketKind::Pong, seq);
+                seq = seq.wrapping_add(1);
+                pong.a = 0;
+                let _ = socket.send_to(&pong.encode(), addr);
+            }
+        }
+
         // The input desktop changed (lock/unlock/UAC). The cursor on the new
         // desktop is unrelated to the previous entry point, so drop the stale
         // accumulator instead of releasing in the middle of the screen.
@@ -52,6 +88,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         if gen != last_desktop_gen {
             last_desktop_gen = gen;
             virtual_x = 0;
+            edge_hits = 0;
             log("session", "desktop changed -> edge accumulator reset");
         }
 
@@ -78,6 +115,16 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         let Some(packet) = Packet::decode(&buf[..n]) else {
             continue;
         };
+        master_addr = Some(addr);
+        {
+            let now = Instant::now();
+            let gap = now.duration_since(last_packet).as_millis() as u64;
+            if gap > max_gap_ms {
+                max_gap_ms = gap;
+            }
+            last_packet = now;
+            rx_packets += 1;
+        }
 
         match packet.kind {
             PacketKind::Hello => {
@@ -89,6 +136,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
             PacketKind::Switch => {
                 entry_edge = packet.b.clamp(1, 2);
                 virtual_x = 0;
+                edge_hits = 0;
                 controlled = true;
                 bounds = win::virtual_bounds().ok();
                 log(
@@ -132,11 +180,19 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                     virtual_x > release_px
                 };
                 if outward && at_edge && past {
+                    edge_hits += 1;
+                } else {
+                    edge_hits = 0;
+                }
+                // Require two consecutive outward packets at the edge: a single
+                // flick near the edge must not hand control back.
+                if edge_hits >= 2 {
                     let mut release = Packet::new(PacketKind::Release, seq);
                     seq = seq.wrapping_add(1);
                     release.a = 5; // edge
                     let _ = socket.send_to(&release.encode(), addr);
                     controlled = false;
+                    edge_hits = 0;
                     submit(InjectEvent::Release);
                     log(
                         "session",

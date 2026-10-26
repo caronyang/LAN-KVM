@@ -9,7 +9,9 @@ use std::io;
 use std::mem::{size_of, zeroed};
 use std::net::{SocketAddr, UdpSocket};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicIsize, AtomicU32, AtomicU64, Ordering,
+};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -61,7 +63,8 @@ macro_rules! plog {
 static EVENT_TX: OnceLock<Sender<Event>> = OnceLock::new();
 static REMOTE: AtomicBool = AtomicBool::new(false);
 static MAIN_THREAD_ID: AtomicU32 = AtomicU32::new(0);
-static LAST_PONG_MS: AtomicU64 = AtomicU64::new(0);
+/// Last time we heard anything from the peer (PONG, keepalive or release).
+static LAST_SEEN_MS: AtomicU64 = AtomicU64::new(0);
 static REMOTE_MOTION: AtomicU64 = AtomicU64::new(0);
 static CURSOR_HIDDEN: AtomicBool = AtomicBool::new(false);
 static CURSOR_HIDER: AtomicIsize = AtomicIsize::new(0);
@@ -71,6 +74,26 @@ static START: OnceLock<Instant> = OnceLock::new();
 static BOUNDS: OnceLock<Rect> = OnceLock::new();
 static EDGE_KIND: OnceLock<Edge> = OnceLock::new();
 static EDGE: OnceLock<Mutex<EdgeDetector>> = OnceLock::new();
+
+/// Unconsumed relative mouse motion. The sender coalesces it into one packet
+/// every few milliseconds instead of sending one packet per raw input event.
+static PENDING_DX: AtomicI32 = AtomicI32::new(0);
+static PENDING_DY: AtomicI32 = AtomicI32::new(0);
+static MOTION_DIRTY: AtomicBool = AtomicBool::new(false);
+
+/// Diagnostics for the 5-second `[net]` line.
+static TX_PACKETS: AtomicU64 = AtomicU64::new(0);
+static RX_PACKETS: AtomicU64 = AtomicU64::new(0);
+static RTT_MAX_WINDOW: AtomicU64 = AtomicU64::new(0);
+static LAST_RTT_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_RTT_LOG_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_LOCAL_WARN_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Silence longer than this releases control. Wi-Fi scans/roams can easily
+/// stall 1-4 s, so the old 3 s threshold caused spurious releases.
+const PEER_TIMEOUT_MS: u64 = 10_000;
+/// Coalescing interval: at most 250 mouse packets per second.
+const MOTION_INTERVAL: Duration = Duration::from_millis(4);
 
 /// Ask the running session in this process to stop gracefully.
 ///
@@ -93,10 +116,6 @@ enum Event {
         ratio: u16,
         entry_edge: i32,
     },
-    Motion {
-        dx: i32,
-        dy: i32,
-    },
     Button {
         button: u8,
         down: bool,
@@ -113,9 +132,6 @@ enum Event {
     Release {
         reason: &'static str,
     },
-    Ping {
-        ms: u32,
-    },
 }
 
 pub fn run_master(
@@ -128,6 +144,10 @@ pub fn run_master(
 ) -> Result<()> {
     win::enable_dpi_awareness();
     STOP_REQUESTED.store(false, Ordering::SeqCst);
+    LAST_SEEN_MS.store(0, Ordering::SeqCst);
+    PENDING_DX.store(0, Ordering::SeqCst);
+    PENDING_DY.store(0, Ordering::SeqCst);
+    MOTION_DIRTY.store(false, Ordering::SeqCst);
 
     let socket =
         UdpSocket::bind(("0.0.0.0", 0)).with_context(|| "failed to bind master UDP socket")?;
@@ -135,6 +155,11 @@ pub fn run_master(
         .connect((peer, port))
         .with_context(|| format!("failed to resolve/connect to {peer}:{port}"))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    // Bursts of input plus PONGs are tiny; a larger buffer rides out Wi-Fi
+    // stalls without dropping packets.
+    let sock = socket2::SockRef::from(&socket);
+    let _ = sock.set_recv_buffer_size(1 << 20);
+    let _ = sock.set_send_buffer_size(1 << 20);
 
     let start = Instant::now();
     let _ = START.set(start);
@@ -160,8 +185,10 @@ pub fn run_master(
     let receiver_stop = stop.clone();
     let receiver_thread = thread::spawn(move || receiver_loop(receiver_socket, receiver_stop));
 
+    let heartbeat_socket = socket.try_clone()?;
     let heartbeat_stop = stop.clone();
-    let heartbeat_thread = thread::spawn(move || heartbeat_loop(heartbeat_stop));
+    let heartbeat_thread =
+        thread::spawn(move || heartbeat_loop(heartbeat_socket, heartbeat_stop));
 
     let hwnd = create_raw_window()?;
     register_raw_mouse(hwnd)?;
@@ -173,10 +200,8 @@ pub fn run_master(
     println!("[master] this PoC is unencrypted; use only on a trusted LAN");
 
     send_event(Event::Hello);
-    // Immediate liveness probe so the first edge push has a fresh PONG.
-    send_event(Event::Ping {
-        ms: now_ms() as u32,
-    });
+    // Immediate liveness probe so the first edge push has a fresh response.
+    send_ping(&socket);
 
     let timer = if seconds > 0 {
         println!("[master] stopping in {seconds}s");
@@ -233,11 +258,16 @@ pub fn run_master(
 pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     win::enable_dpi_awareness();
     STOP_REQUESTED.store(false, Ordering::SeqCst);
-    let release_px = release_px.max(1);
+    // A 1-2 px overshoot releases on the slightest edge contact; require a
+    // deliberate push.
+    let release_px = release_px.max(6);
 
     let socket = UdpSocket::bind(("0.0.0.0", port))
         .with_context(|| format!("failed to bind UDP port {port}"))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    let sock = socket2::SockRef::from(&socket);
+    let _ = sock.set_recv_buffer_size(1 << 20);
+    let _ = sock.set_send_buffer_size(1 << 20);
 
     let stop = Arc::new(AtomicBool::new(false));
     let timer = if seconds > 0 {
@@ -256,12 +286,26 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     let mut controlled = false;
     let mut virtual_x = 0i32;
     let mut entry_edge = 1i32;
+    let mut edge_hits = 0u32;
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
     let mut seq = 0u32;
     let mut master_addr: Option<SocketAddr> = None;
+    let mut last_keepalive = Instant::now();
     let mut buf = [0u8; 64];
 
     while !stop.load(Ordering::SeqCst) && !STOP_REQUESTED.load(Ordering::SeqCst) {
+        // Unsolicited keepalive so the master's liveness does not depend on its
+        // PING surviving the network.
+        if master_addr.is_some() && last_keepalive.elapsed() >= Duration::from_millis(500) {
+            last_keepalive = Instant::now();
+            if let Some(addr) = master_addr {
+                let mut pong = Packet::new(PacketKind::Pong, seq);
+                seq = seq.wrapping_add(1);
+                pong.a = 0;
+                let _ = socket.send_to(&pong.encode(), addr);
+            }
+        }
+
         let (n, addr) = match socket.recv_from(&mut buf) {
             Ok(value) => value,
             Err(err)
@@ -297,6 +341,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 win::warp_cursor(x, y);
                 controlled = true;
                 virtual_x = 0;
+                edge_hits = 0;
                 plog!(
                     "[client] controlled; entry at ({x}, {y}) from {}",
                     if entry_edge == 2 { "right" } else { "left" }
@@ -308,11 +353,27 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 }
                 win::move_relative(packet.a, packet.b);
                 virtual_x = virtual_x.saturating_add(packet.a);
-                let left_exit = entry_edge == 1 && virtual_x < -release_px;
-                let right_exit = entry_edge == 2 && virtual_x > release_px;
-                if left_exit || right_exit {
+                let outward = if entry_edge == 1 {
+                    packet.a < 0
+                } else {
+                    packet.a > 0
+                };
+                let past = if entry_edge == 1 {
+                    virtual_x < -release_px
+                } else {
+                    virtual_x > release_px
+                };
+                if outward && past {
+                    edge_hits += 1;
+                } else {
+                    edge_hits = 0;
+                }
+                // Two consecutive outward packets: a single flick near the
+                // edge should not hand control back.
+                if edge_hits >= 2 {
                     send_release(&socket, addr, &mut seq, 5);
                     controlled = false;
+                    edge_hits = 0;
                     release_keys(&mut pressed);
                     plog!("[client] released at edge");
                 }
@@ -372,8 +433,37 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
 
 fn sender_loop(socket: UdpSocket, rx: Receiver<Event>, stop: Arc<AtomicBool>) {
     let mut seq = 0u32;
+    let mut last_motion = Instant::now() - MOTION_INTERVAL;
     while !stop.load(Ordering::SeqCst) {
-        let event = match rx.recv_timeout(Duration::from_millis(100)) {
+        // Coalesce raw mouse motion into at most one packet per MOTION_INTERVAL.
+        // This keeps the wire rate bounded even with a 1000 Hz mouse and stops
+        // the send queue from growing during a network stall.
+        if REMOTE.load(Ordering::SeqCst)
+            && MOTION_DIRTY.load(Ordering::SeqCst)
+            && last_motion.elapsed() >= MOTION_INTERVAL
+        {
+            let dx = PENDING_DX.swap(0, Ordering::SeqCst);
+            let dy = PENDING_DY.swap(0, Ordering::SeqCst);
+            MOTION_DIRTY.store(false, Ordering::SeqCst);
+            // A raw event may have landed between the swap and the store above.
+            if PENDING_DX.load(Ordering::SeqCst) != 0 || PENDING_DY.load(Ordering::SeqCst) != 0 {
+                MOTION_DIRTY.store(true, Ordering::SeqCst);
+            }
+            if dx != 0 || dy != 0 {
+                let mut packet = Packet::new(PacketKind::Motion, seq);
+                seq = seq.wrapping_add(1);
+                packet.a = dx.clamp(-2000, 2000);
+                packet.b = dy.clamp(-2000, 2000);
+                if let Err(err) = socket.send(&packet.encode()) {
+                    eprintln!("[net] send failed: {err}");
+                } else {
+                    TX_PACKETS.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            last_motion = Instant::now();
+        }
+
+        let event = match rx.recv_timeout(Duration::from_millis(2)) {
             Ok(event) => event,
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => continue,
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
@@ -384,12 +474,6 @@ fn sender_loop(socket: UdpSocket, rx: Receiver<Event>, stop: Arc<AtomicBool>) {
                 let mut p = Packet::new(PacketKind::Switch, seq);
                 p.a = ratio as i32;
                 p.b = entry_edge;
-                p
-            }
-            Event::Motion { dx, dy } => {
-                let mut p = Packet::new(PacketKind::Motion, seq);
-                p.a = dx;
-                p.b = dy;
                 p
             }
             Event::Button { button, down } => {
@@ -420,17 +504,24 @@ fn sender_loop(socket: UdpSocket, rx: Receiver<Event>, stop: Arc<AtomicBool>) {
                 p.a = reason_code(reason);
                 p
             }
-            Event::Ping { ms } => {
-                let mut p = Packet::new(PacketKind::Ping, seq);
-                p.a = ms as i32;
-                p
-            }
         };
         packet.seq = seq;
         seq = seq.wrapping_add(1);
         if let Err(err) = socket.send(&packet.encode()) {
             eprintln!("[net] send failed: {err}");
+        } else {
+            TX_PACKETS.fetch_add(1, Ordering::Relaxed);
         }
+    }
+}
+
+fn send_ping(socket: &UdpSocket) {
+    let mut packet = Packet::new(PacketKind::Ping, 0);
+    // Timestamp taken right before the send, so RTT is not inflated by any
+    // queueing on our side.
+    packet.a = now_ms() as i32;
+    if socket.send(&packet.encode()).is_ok() {
+        TX_PACKETS.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -444,15 +535,27 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
                 };
                 match packet.kind {
                     PacketKind::Pong => {
-                        let sent = packet.a.max(0) as u64;
                         let now = now_ms();
-                        let rtt = now.saturating_sub(sent);
-                        if LAST_PONG_MS.swap(now, Ordering::SeqCst) == 0 {
+                        if LAST_SEEN_MS.swap(now, Ordering::SeqCst) == 0 {
                             plog!("[master] client online");
                         }
-                        plog!("[latency] rtt={rtt} ms");
+                        RX_PACKETS.fetch_add(1, Ordering::Relaxed);
+                        let sent = packet.a.max(0) as u64;
+                        // a == 0 is the client's unsolicited keepalive.
+                        if sent != 0 {
+                            let rtt = now.saturating_sub(sent);
+                            LAST_RTT_MS.store(rtt, Ordering::SeqCst);
+                            RTT_MAX_WINDOW.fetch_max(rtt, Ordering::SeqCst);
+                            let last_log = LAST_RTT_LOG_MS.load(Ordering::SeqCst);
+                            if now.saturating_sub(last_log) >= 1_000 {
+                                LAST_RTT_LOG_MS.store(now, Ordering::SeqCst);
+                                plog!("[latency] rtt={rtt} ms");
+                            }
+                        }
                     }
                     PacketKind::Release => {
+                        LAST_SEEN_MS.store(now_ms(), Ordering::SeqCst);
+                        RX_PACKETS.fetch_add(1, Ordering::Relaxed);
                         post_release(reason_name(packet.a.max(0) as u32));
                     }
                     PacketKind::Hello => {
@@ -477,24 +580,51 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
     }
 }
 
-fn heartbeat_loop(stop: Arc<AtomicBool>) {
+fn heartbeat_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
+    let mut last_stats = Instant::now();
     while !stop.load(Ordering::SeqCst) {
-        for _ in 0..10 {
+        // 4 Hz while controlling (fast failure detection), 1 Hz when idle.
+        let interval_ms = if REMOTE.load(Ordering::SeqCst) { 250 } else { 1_000 };
+        let mut slept = 0u64;
+        while slept < interval_ms {
             if stop.load(Ordering::SeqCst) {
                 return;
             }
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(50));
+            slept += 50;
         }
-        send_event(Event::Ping {
-            ms: now_ms() as u32,
-        });
+
+        send_ping(&socket);
+
         if REMOTE.load(Ordering::SeqCst) {
-            let motion = REMOTE_MOTION.swap(0, Ordering::SeqCst);
-            plog!("[master] remote motion {motion}/s");
-            let last = LAST_PONG_MS.load(Ordering::SeqCst);
-            if last != 0 && now_ms().saturating_sub(last) > 3_000 {
+            let last = LAST_SEEN_MS.load(Ordering::SeqCst);
+            let age = now_ms().saturating_sub(last);
+            if last != 0 && age > PEER_TIMEOUT_MS {
+                plog!("[master] peer silent for {age} ms; releasing control");
                 post_release("timeout");
             }
+        }
+
+        if last_stats.elapsed() >= Duration::from_secs(5) {
+            last_stats = Instant::now();
+            let motion = REMOTE_MOTION.swap(0, Ordering::Relaxed);
+            let tx = TX_PACKETS.swap(0, Ordering::Relaxed);
+            let rx = RX_PACKETS.swap(0, Ordering::Relaxed);
+            let max_rtt = RTT_MAX_WINDOW.swap(0, Ordering::Relaxed);
+            let last_rtt = LAST_RTT_MS.load(Ordering::Relaxed);
+            let last = LAST_SEEN_MS.load(Ordering::Relaxed);
+            let age = if last == 0 {
+                0
+            } else {
+                now_ms().saturating_sub(last)
+            };
+            if REMOTE.load(Ordering::SeqCst) {
+                plog!("[master] remote motion {motion}/s");
+            }
+            plog!(
+                "[net] tx={tx} rx={rx} rtt={last_rtt}ms rtt_max={max_rtt}ms motion={motion}/s silent={age}ms remote={}",
+                REMOTE.load(Ordering::SeqCst)
+            );
         }
     }
 }
@@ -718,10 +848,10 @@ fn handle_raw_input(lparam: LPARAM) {
 
     if REMOTE.load(Ordering::SeqCst) {
         REMOTE_MOTION.fetch_add(1, Ordering::Relaxed);
-        send_event(Event::Motion {
-            dx: dx.clamp(-500, 500),
-            dy: dy.clamp(-500, 500),
-        });
+        // Accumulate; the sender coalesces this into one packet per few ms.
+        PENDING_DX.fetch_add(dx.clamp(-500, 500), Ordering::Relaxed);
+        PENDING_DY.fetch_add(dy.clamp(-500, 500), Ordering::Relaxed);
+        MOTION_DIRTY.store(true, Ordering::Relaxed);
         return;
     }
 
@@ -753,9 +883,14 @@ fn do_switch(cursor: Point, bounds: Rect) {
 
     // Do not hide/pin the local cursor unless the peer has answered recently.
     // This avoids a black-hole state when the IP, firewall, or client is wrong.
-    let last_pong = LAST_PONG_MS.load(Ordering::SeqCst);
-    if last_pong == 0 || now_ms().saturating_sub(last_pong) > 3_000 {
-        plog!("[master] client not reachable (no recent PONG); staying local");
+    let last_seen = LAST_SEEN_MS.load(Ordering::SeqCst);
+    let age = now_ms().saturating_sub(last_seen);
+    if last_seen == 0 || age > PEER_TIMEOUT_MS {
+        let now = now_ms();
+        if now.saturating_sub(LAST_LOCAL_WARN_MS.load(Ordering::SeqCst)) > 2_000 {
+            LAST_LOCAL_WARN_MS.store(now, Ordering::SeqCst);
+            plog!("[master] peer unreachable (silent {age} ms); staying local");
+        }
         if let Some(detector) = EDGE.get() {
             detector.lock().unwrap_or_else(|e| e.into_inner()).reset();
         }
@@ -796,7 +931,12 @@ fn do_switch(cursor: Point, bounds: Rect) {
         CURSOR_HIDER.store(hwnd as isize, Ordering::SeqCst);
     }
     CURSOR_HIDDEN.store(true, Ordering::SeqCst);
-    LAST_PONG_MS.store(now_ms(), Ordering::SeqCst);
+    LAST_SEEN_MS.store(now_ms(), Ordering::SeqCst);
+    // Start from a clean accumulator: the click that crossed the edge should
+    // not be replayed as remote motion.
+    PENDING_DX.store(0, Ordering::SeqCst);
+    PENDING_DY.store(0, Ordering::SeqCst);
+    MOTION_DIRTY.store(false, Ordering::SeqCst);
     send_event(Event::Switch { ratio, entry_edge });
 
     plog!(
@@ -824,6 +964,9 @@ fn do_release(reason: &'static str) {
     send_event(Event::Release { reason });
     win::release_clip();
     restore_cursor();
+    PENDING_DX.store(0, Ordering::SeqCst);
+    PENDING_DY.store(0, Ordering::SeqCst);
+    MOTION_DIRTY.store(false, Ordering::SeqCst);
 
     // A detector that has fired stays fired until reset; without this the
     // second edge crossing (and every one after it) would be ignored.
@@ -844,7 +987,13 @@ fn do_release(reason: &'static str) {
         };
         win::warp_cursor(x, cursor.y);
     }
-    plog!("[master] remote control OFF ({reason})");
+    let last = LAST_SEEN_MS.load(Ordering::SeqCst);
+    let silent = if last == 0 {
+        0
+    } else {
+        now_ms().saturating_sub(last)
+    };
+    plog!("[master] remote control OFF ({reason}, peer silent {silent} ms)");
 }
 
 fn send_event(event: Event) {

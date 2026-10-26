@@ -220,7 +220,7 @@ fn main() {
             let _ = std::fs::create_dir_all(&config_dir);
             let _ = std::fs::write(
                 config_dir.join("config.txt"),
-                "client_port=45872\nrelease_px=2\n",
+                "client_port=45872\nrelease_px=10\n",
             );
             // Wait for a previous service to be fully deleted.
             for _ in 0..80 {

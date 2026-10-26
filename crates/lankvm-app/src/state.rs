@@ -26,7 +26,7 @@ fn default_trigger_ms() -> u64 {
 }
 
 fn default_release_px() -> i32 {
-    2
+    10
 }
 
 fn default_lang() -> String {
@@ -186,12 +186,16 @@ impl App {
         let line = format!("[{}] {}", now_hms(), line.into());
         eprintln!("{line}");
         let _ = fs::create_dir_all(config_dir());
-        if let Ok(mut file) = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(config_dir().join("app.log"))
         {
-            let _ = writeln!(file, "{line}");
+            static WRITE_LOCK: Mutex<()> = Mutex::new(());
+            let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            if let Ok(mut file) = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(config_dir().join("app.log"))
+            {
+                let _ = file.write_all(format!("{line}\n").as_bytes());
+            }
         }
         let mut logs = self.logs.lock().unwrap_or_else(|e| e.into_inner());
         logs.push(line);
@@ -324,7 +328,17 @@ pub fn config_path(profile: Option<&str>) -> PathBuf {
 
 pub fn load_or_create(profile: Option<&str>) -> (Config, bool) {
     if let Ok(text) = fs::read_to_string(config_path(profile)) {
-        if let Ok(config) = serde_json::from_str::<Config>(&text) {
+        if let Ok(mut config) = serde_json::from_str::<Config>(&text) {
+            // 2 px was the old default and released control on the slightest
+            // edge contact. Migrate it once to the new default.
+            if config.release_px <= 2 {
+                config.release_px = default_release_px();
+            }
+            for peer in &mut config.paired {
+                if peer.release_px <= 2 {
+                    peer.release_px = default_release_px();
+                }
+            }
             return (config, true);
         }
     }

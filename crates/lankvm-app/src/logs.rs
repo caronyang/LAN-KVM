@@ -284,6 +284,17 @@ fn create_bundle(app: &Arc<App>, base: PathBuf) -> Result<PathBuf> {
     ));
     for (label, program, args) in [
         ("ipconfig", "ipconfig.exe", vec!["/all"]),
+        ("wlan", "netsh.exe", vec!["wlan", "show", "interfaces"]),
+        ("wlan_networks", "netsh.exe", vec!["wlan", "show", "networks", "mode=bssid"]),
+        (
+            "wlan_power",
+            "powershell.exe",
+            vec![
+                "-NoProfile",
+                "-Command",
+                "Get-NetAdapterPowerManagement -Name * -ErrorAction SilentlyContinue | Select-Object Name,AllowComputerToTurnOffDevice | Format-List",
+            ],
+        ),
         ("service", "sc.exe", vec!["query", "LAN-KVM"]),
         ("udp", "netstat.exe", vec!["-ano", "-p", "UDP"]),
         (
@@ -305,6 +316,11 @@ fn create_bundle(app: &Arc<App>, base: PathBuf) -> Result<PathBuf> {
             "firewall_logs",
             "netsh.exe",
             vec!["advfirewall", "firewall", "show", "rule", "name=LAN-KVM Logs"],
+        ),
+        (
+            "firewall_clipboard",
+            "netsh.exe",
+            vec!["advfirewall", "firewall", "show", "rule", "name=LAN-KVM Clipboard"],
         ),
     ] {
         system.push_str(&format!("\n===== {label} =====\n"));

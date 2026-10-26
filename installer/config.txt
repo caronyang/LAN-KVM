@@ -1,2 +1,2 @@
 client_port=45872
-release_px=2
+release_px=10

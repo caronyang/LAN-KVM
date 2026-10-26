@@ -170,9 +170,9 @@ fn run_service() -> Result<()> {
                         health_failures = health_failures.saturating_add(1);
                         log(
                             "service",
-                            format!("client health probe failed ({health_failures}/3)"),
+                            format!("client health probe failed ({health_failures}/6)"),
                         );
-                        if health_failures >= 3 {
+                        if health_failures >= 6 {
                             log(
                                 "service",
                                 "restarting session agent: UDP client not responding",
@@ -224,7 +224,7 @@ fn probe_client(port: u16) -> bool {
     let Ok(socket) = UdpSocket::bind(("127.0.0.1", 0)) else {
         return false;
     };
-    let _ = socket.set_read_timeout(Some(Duration::from_millis(300)));
+    let _ = socket.set_read_timeout(Some(Duration::from_millis(500)));
     let mut ping = Packet::new(PacketKind::Ping, 0);
     ping.a = 0;
     if socket
@@ -234,12 +234,22 @@ fn probe_client(port: u16) -> bool {
         return false;
     }
     let mut buffer = [0u8; 64];
-    match socket.recv_from(&mut buffer) {
-        Ok((n, _)) => Packet::decode(&buffer[..n])
-            .map(|packet| packet.kind == PacketKind::Pong && packet.d == 1)
-            .unwrap_or(false),
-        Err(_) => false,
+    // A busy agent can miss a single probe. Retry once within the same check
+    // before counting a failure.
+    for _ in 0..2 {
+        match socket.recv_from(&mut buffer) {
+            Ok((n, _)) => {
+                if Packet::decode(&buffer[..n])
+                    .map(|packet| packet.kind == PacketKind::Pong && packet.d == 1)
+                    .unwrap_or(false)
+                {
+                    return true;
+                }
+            }
+            Err(_) => {}
+        }
     }
+    false
 }
 
 pub fn install() -> Result<()> {
