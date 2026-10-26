@@ -56,6 +56,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
     // them would earn an ICMP port-unreachable and kill this loop with
     // WSAECONNRESET (10054).
     let mut keepalive_to: Option<(SocketAddr, Instant)> = None;
+    let mut master_addr: Option<SocketAddr> = None;
     let mut last_keepalive = Instant::now();
     let mut last_packet = Instant::now();
     let mut last_stats = Instant::now();
@@ -102,12 +103,19 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         }
 
         // The master disappeared (killed, network gone). Release any keys we
-        // are holding so the desktop is not left with a stuck modifier.
+        // are holding so the desktop is not left with a stuck modifier, and
+        // tell the master to drop control if it is still alive.
         if controlled && last_packet.elapsed() > Duration::from_secs(15) {
             controlled = false;
             edge_hits = 0;
             submit(InjectEvent::Release);
-            log("session", "master silent 15 s; releasing injected keys");
+            if let Some(addr) = master_addr {
+                let mut release = Packet::new(PacketKind::Release, seq);
+                seq = seq.wrapping_add(1);
+                release.a = 3; // timeout
+                let _ = socket.send_to(&release.encode(), addr);
+            }
+            log("session", "master silent 15 s; released keys and control");
         }
 
         // Do not auto-release on injection failure here: it makes the lock
@@ -126,6 +134,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         let Some(packet) = Packet::decode(&buf[..n]) else {
             continue;
         };
+        master_addr = Some(addr);
         {
             let now = Instant::now();
             let gap = now.duration_since(last_packet).as_millis() as u64;
@@ -238,6 +247,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                         down: packet.b != 0,
                         extended: packet.c != 0,
                         shift: packet.flags & 1 != 0,
+                        shift_known: packet.flags & 2 != 0,
                     });
                 }
             }

@@ -2,8 +2,8 @@
 1 24 "resources/lankvm-service.manifest"
 
 1 VERSIONINFO
- FILEVERSION 1,1,3,0
- PRODUCTVERSION 1,1,3,0
+ FILEVERSION 1,1,4,0
+ PRODUCTVERSION 1,1,4,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -16,12 +16,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "LAN-KVM Project"
             VALUE "FileDescription", "LAN-KVM privileged service"
-            VALUE "FileVersion", "1.1.3.0"
+            VALUE "FileVersion", "1.1.4.0"
             VALUE "InternalName", "lankvm-service"
             VALUE "LegalCopyright", "GPL-3.0-or-later"
             VALUE "OriginalFilename", "lankvm-service.exe"
             VALUE "ProductName", "LAN-KVM"
-            VALUE "ProductVersion", "1.1.3.0"
+            VALUE "ProductVersion", "1.1.4.0"
         END
     END
     BLOCK "VarFileInfo"

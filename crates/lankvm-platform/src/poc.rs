@@ -26,7 +26,7 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_MENU, VK_Q, VK_SHIFT,
+    GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_MENU, VK_Q, VK_R, VK_SHIFT,
 };
 use windows_sys::Win32::UI::Input::{
     GetRawInputData, RegisterRawInputDevices, MOUSE_MOVE_ABSOLUTE, RAWINPUT, RAWINPUTDEVICE,
@@ -88,6 +88,14 @@ static RTT_MAX_WINDOW: AtomicU64 = AtomicU64::new(0);
 static LAST_RTT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_RTT_LOG_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_LOCAL_WARN_MS: AtomicU64 = AtomicU64::new(0);
+/// Physical Shift state as seen by the hook. `GetAsyncKeyState` is unusable
+/// while we swallow the key (returning 1 prevents the async state update).
+static SHIFT_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// Bit 0: Shift is down. Bit 1: the master actually reported the state.
+/// Old peers send flags == 0, which must not be read as "Shift up".
+const FLAG_SHIFT_DOWN: u16 = 0x1;
+const FLAG_SHIFT_VALID: u16 = 0x2;
 
 /// Silence longer than this releases control. Wi-Fi scans/roams can easily
 /// stall 1-4 s, so the old 3 s threshold caused spurious releases.
@@ -313,7 +321,10 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
             controlled = false;
             release_keys(&mut pressed);
             shift_down = false;
-            plog!("[client] master silent 15 s; released keys");
+            if let Some(addr) = master_addr {
+                send_release(&socket, addr, &mut seq, 3);
+            }
+            plog!("[client] master silent 15 s; released keys and control");
         }
         // Unsolicited keepalive so the master's liveness does not depend on its
         // PING surviving the network. Only armed by real input, and dropped
@@ -413,6 +424,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                     let down = packet.b != 0;
                     let is_shift = matches!(scan, 0x2A | 0x36);
                     let shift = packet.flags & 1 != 0;
+                    let shift_known = packet.flags & 2 != 0;
                     if is_shift {
                         if down != shift_down {
                             win::key_scancode(0x2A, down, false);
@@ -424,7 +436,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                             }
                         }
                     } else {
-                        if shift != shift_down {
+                        if shift_known && shift != shift_down {
                             win::key_scancode(0x2A, shift, false);
                             shift_down = shift;
                             if shift {
@@ -540,7 +552,8 @@ fn sender_loop(socket: UdpSocket, rx: Receiver<Event>, stop: Arc<AtomicBool>) {
                 p.a = scan as i32;
                 p.b = down as i32;
                 p.c = extended as i32;
-                p.flags = if shift { 1 } else { 0 };
+                p.flags = FLAG_SHIFT_VALID
+                    | if shift { FLAG_SHIFT_DOWN } else { 0 };
                 p
             }
             Event::Wheel { delta, horizontal } => {
@@ -738,19 +751,25 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
             let message = wparam as u32;
             let down = matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN);
             let up = matches!(message, WM_KEYUP | WM_SYSKEYUP);
-            if down && event.vkCode == VK_Q as u32 && hotkey_modifiers_down() {
+            if down
+                && (event.vkCode == VK_Q as u32 || event.vkCode == VK_R as u32)
+                && hotkey_modifiers_down()
+            {
                 post_release("hotkey");
                 return 1;
             }
             if down || up {
-                // Modifier state travels with every key so the client can
-                // re-assert Shift if a modifier packet was lost.
-                let shift = unsafe { GetAsyncKeyState(VK_SHIFT as i32) < 0 };
+                let scan = event.scanCode as u16;
+                // Track Shift ourselves: returning 1 from this hook swallows the
+                // key, so the system's async key state is never updated.
+                if matches!(scan, 0x2A | 0x36) {
+                    SHIFT_DOWN.store(down, Ordering::SeqCst);
+                }
                 send_event(Event::Key {
-                    scan: event.scanCode as u16,
+                    scan,
                     down,
                     extended: event.flags & LLKHF_EXTENDED != 0,
-                    shift,
+                    shift: SHIFT_DOWN.load(Ordering::SeqCst),
                 });
                 return 1;
             }
@@ -1014,6 +1033,9 @@ fn do_switch(cursor: Point, bounds: Rect) {
         CURSOR_HIDER.store(hwnd as isize, Ordering::SeqCst);
     }
     CURSOR_HIDDEN.store(true, Ordering::SeqCst);
+    // A modifier may already be held when the user crosses the edge; the hook
+    // never saw that keydown, so seed the state from the async key state.
+    SHIFT_DOWN.store(unsafe { GetAsyncKeyState(VK_SHIFT as i32) < 0 }, Ordering::SeqCst);
     LAST_SEEN_MS.store(now_ms(), Ordering::SeqCst);
     // Start from a clean accumulator: the click that crossed the edge should
     // not be replayed as remote motion.
@@ -1047,6 +1069,7 @@ fn do_release(reason: &'static str) {
     send_event(Event::Release { reason });
     win::release_clip();
     restore_cursor();
+    SHIFT_DOWN.store(false, Ordering::SeqCst);
     PENDING_DX.store(0, Ordering::SeqCst);
     PENDING_DY.store(0, Ordering::SeqCst);
     MOTION_DIRTY.store(false, Ordering::SeqCst);

@@ -295,6 +295,7 @@ fn apply(
             down,
             extended,
             shift,
+            shift_known,
         } => {
             let is_shift = matches!(scan, 0x2A | 0x36);
             if is_shift {
@@ -315,7 +316,7 @@ fn apply(
             // Re-assert Shift for ordinary keys when the master's state differs
             // from ours. A single lost modifier packet would otherwise turn
             // Shift+/ into '/'.
-            if shift != *shift_down {
+            if shift_known && shift != *shift_down {
                 let _ = win::key_scancode(0x2A, shift, false);
                 *shift_down = shift;
                 if shift {

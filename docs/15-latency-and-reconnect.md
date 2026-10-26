@@ -1,9 +1,9 @@
 # 延遲與「跳回」修正（v1.1）
 
 > 日期：2026-10-26
-> 版本：`1.1.3`
-> 產物：`dist-app/LAN-KVM-Setup-1.1.3.exe`
-> SHA-256：`2416F34B4A8781E439D50AD8B313B3A7490461341CE389A3C1026444B7D87F5A`
+> 版本：`1.1.4`
+> 產物：`dist-app/LAN-KVM-Setup-1.1.4.exe`
+> SHA-256：`B9780DDD6704554C2568E4EAF5A0CE016412275EBD67740E8C22B30ED6CB595B`
 
 > **1.1.1 熱修**：1.1.0 新增的 keepalive 會打到已關閉的 UDP 埠，Windows 回應 ICMP
 > port-unreachable，client 的接收迴圈以 `WSAECONNRESET / WSAETIMEDOUT` 結束，
@@ -317,3 +317,44 @@ heartbeat 執行緒因此停止 → **timeout 永遠不會觸發**。
 - `app.log` 應出現 `tray: emergency hotkey Ctrl+Alt+Shift+R registered`。
 - 按熱鍵或呼叫 API 後：`EMERGENCY release (hotkey/api)`、`engine master stopped`。
 - 這次也實測：API 觸發後 engine 行程結束、session 清除。
+
+---
+
+## 9. 1.1.4：1.1.3 的 Shift 反向問題
+
+### 9.1 症狀
+
+1.1.3 之後，**左右 Shift + `/` 都打不出 `?`**（只出現 `/`），比 1.1.2 更嚴重。
+
+### 9.2 兩個原因
+
+1. **版本不一致**
+   1.1.2 的 master 不送 Shift 旗標（`flags = 0`），1.1.3 的 client 把「沒有旗標」
+   解讀成「Shift 是放開的」，於是在 `/` 之前**主動把 Shift 放掉**。
+
+2. **LL hook 會吞掉 async key state**
+   為了把按鍵只送給對方，hook 回傳 1（吞掉）。這會讓 `GetAsyncKeyState(VK_SHIFT)`
+   **永遠回報未按下**，所以每一顆按鍵都帶著「Shift = up」，client 又把 Shift 放掉。
+
+### 9.3 修正
+
+- master 自己追蹤 Shift 狀態（`SHIFT_DOWN`），不再依賴 `GetAsyncKeyState`；
+  進入控制時用當下的 async state 初始化（切換前就按著 Shift 也正確）。
+- 旗標新增 **valid bit**：`bit0 = Shift down`、`bit1 = 狀態有效`。
+  舊 master（`flags = 0`）→ client **不做同步**，維持 1.1.2 的行為。
+- engine 的 LL hook 除了 `Ctrl+Alt+Shift+Q`，**也接受 `Ctrl+Alt+Shift+R`**
+  （即使 App 是舊版或沒在跑，engine 還能自救）。
+- client 端 15 秒沒收到 master 封包時，除了放掉按鍵，也會送一個 Release 封包，
+  讓還活著的 master 一併釋放（不再默默停止注入）。
+
+### 9.4 驗證矩陣（本機以封包直接測試）
+
+| 情境 | 結果 |
+|---|---|
+| 舊 master（flags=0）+ 左右 Shift + `/` | `?` ✓ |
+| 新 master（flags=3）+ Shift + `/` | `?` ✓ |
+| 新 master，Shift 封包遺失（flags=3，沒有 Shift keydown） | `?` ✓（自動補 Shift） |
+| 新 master，沒按 Shift（flags=2）+ `/` | `/` ✓ |
+
+> 注意：**兩台都要安裝 1.1.4**。混用 1.1.2/1.1.4 可以運作（valid bit 保護），
+> 但緊急熱鍵 `Ctrl+Alt+Shift+R` 只有 1.1.3 以後的 App 才有。

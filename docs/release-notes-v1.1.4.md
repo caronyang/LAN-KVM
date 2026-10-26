@@ -1,4 +1,4 @@
-# LAN-KVM 1.1.3
+# LAN-KVM 1.1.4
 
 Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 1.1.0 keepalive regression, and a fix for `Shift + /` on the controlled machine.
@@ -7,7 +7,7 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 
 | File | Size | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.3.exe` | 2.96 MB | `2416F34B4A8781E439D50AD8B313B3A7490461341CE389A3C1026444B7D87F5A` |
+| `LAN-KVM-Setup-1.1.4.exe` | 2.96 MB | `B9780DDD6704554C2568E4EAF5A0CE016412275EBD67740E8C22B30ED6CB595B` |
 
 ## What changed
 
@@ -56,6 +56,18 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 - The client releases held keys after 15 s without master traffic.
 - `engine.log` is appended (with a start marker) instead of overwritten; rotates at 8 MB.
 
+**1.1.4 Shift regression fix**
+
+- The master now tracks the physical Shift state itself. Returning 1 from the
+  low-level hook stops Windows from updating the async key state, so the old
+  `GetAsyncKeyState(VK_SHIFT)` lookup always reported "up".
+- The modifier flag now has a validity bit. Peers that do not send it (1.1.2 and
+  older) are ignored instead of being read as "Shift released", so mixed versions
+  keep typing `?` correctly.
+- The engine also accepts `Ctrl+Alt+Shift+R`, not just `Q`.
+- When the client sees 15 s of silence it releases keys *and* tells the master,
+  so a recovered master does not keep sending input into a deaf client.
+
 **Diagnostics**
 
 - `engine.log` every 5 s: `[net] tx/rx/rtt/rtt_max/motion/silent/remote`.
@@ -88,7 +100,7 @@ Ethernet on the client is still the single biggest improvement.
 
 | 檔案 | 大小 | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.3.exe` | 2.96 MB | `2416F34B4A8781E439D50AD8B313B3A7490461341CE389A3C1026444B7D87F5A` |
+| `LAN-KVM-Setup-1.1.4.exe` | 2.96 MB | `B9780DDD6704554C2568E4EAF5A0CE016412275EBD67740E8C22B30ED6CB595B` |
 
 ## 修改內容
 

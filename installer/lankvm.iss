@@ -16,7 +16,7 @@
 ;   * HKCU Run entry for the tray app
 
 #define AppName "LAN-KVM"
-#define AppVersion "1.1.3"
+#define AppVersion "1.1.4"
 #define AppPublisher "LAN-KVM"
 #define SourceDir "..\target\release"
 
@@ -24,7 +24,7 @@
 AppId={{8B0F6E1C-4A2B-4C57-9A3B-7E5D2C1F9A10}
 AppName={#AppName}
 AppVersion={#AppVersion}
-VersionInfoVersion=1.1.3.0
+VersionInfoVersion=1.1.4.0
 VersionInfoDescription=LAN-KVM Setup
 AppPublisher={#AppPublisher}
 AppPublisherURL=https://github.com/caronyang/LAN-KVM
@@ -33,7 +33,7 @@ DefaultDirName={autopf}\LAN-KVM
 DefaultGroupName=LAN-KVM
 DisableProgramGroupPage=yes
 OutputDir=..\dist-app
-OutputBaseFilename=LAN-KVM-Setup-1.1.3
+OutputBaseFilename=LAN-KVM-Setup-1.1.4
 SetupIconFile=..\assets\branding\icons\lankvm.ico
 UninstallDisplayIcon={app}\lankvm-app.exe
 UninstallDisplayName={#AppName} {#AppVersion}

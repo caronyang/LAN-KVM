@@ -87,6 +87,7 @@ fn process_connection(stream: &mut TcpStream) {
                 let down = b != 0;
                 let is_shift = matches!(scan, 0x2A | 0x36);
                 let shift = c & 0x100 != 0;
+                let shift_known = c & 0x200 != 0;
                 if is_shift {
                     if down != shift_down {
                         let _ = win::key_scancode(0x2A, down, false);
@@ -99,7 +100,7 @@ fn process_connection(stream: &mut TcpStream) {
                     }
                     true
                 } else {
-                    if shift != shift_down {
+                    if shift_known && shift != shift_down {
                         let _ = win::key_scancode(0x2A, shift, false);
                         shift_down = shift;
                         if shift {
