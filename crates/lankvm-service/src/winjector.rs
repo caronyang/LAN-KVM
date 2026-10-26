@@ -50,6 +50,7 @@ fn process_connection(stream: &mut TcpStream) {
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
     let mut frame = [0u8; 16];
     let mut failures = 0u32;
+    let mut shift_down = false;
 
     loop {
         match stream.read_exact(&mut frame) {
@@ -82,17 +83,45 @@ fn process_connection(stream: &mut TcpStream) {
             2 => win::move_relative(a, b),
             3 => win::mouse_button(a as u8, b != 0),
             4 => {
-                let ok = win::key_scancode(a as u16, b != 0, c != 0);
-                if b != 0 {
-                    pressed.insert((a as u16, c != 0));
+                let scan = a as u16;
+                let down = b != 0;
+                let is_shift = matches!(scan, 0x2A | 0x36);
+                let shift = c & 0x100 != 0;
+                if is_shift {
+                    if down != shift_down {
+                        let _ = win::key_scancode(0x2A, down, false);
+                        shift_down = down;
+                        if down {
+                            pressed.insert((0x2A, false));
+                        } else {
+                            pressed.remove(&(0x2A, false));
+                        }
+                    }
+                    true
                 } else {
-                    pressed.remove(&(a as u16, c != 0));
+                    if shift != shift_down {
+                        let _ = win::key_scancode(0x2A, shift, false);
+                        shift_down = shift;
+                        if shift {
+                            pressed.insert((0x2A, false));
+                        } else {
+                            pressed.remove(&(0x2A, false));
+                        }
+                    }
+                    let extended = c & 1 != 0;
+                    let ok = win::key_scancode(scan, down, extended);
+                    if down {
+                        pressed.insert((scan, extended));
+                    } else {
+                        pressed.remove(&(scan, extended));
+                    }
+                    ok
                 }
-                ok
             }
             5 => win::wheel(a, b != 0),
             6 => {
                 release_keys(&mut pressed);
+                shift_down = false;
                 true
             }
             _ => true,

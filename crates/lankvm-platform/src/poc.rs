@@ -124,6 +124,7 @@ enum Event {
         scan: u16,
         down: bool,
         extended: bool,
+        shift: bool,
     },
     Wheel {
         delta: i32,
@@ -288,6 +289,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     let mut entry_edge = 1i32;
     let mut edge_hits = 0u32;
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
+    let mut shift_down = false;
     let mut seq = 0u32;
     let mut master_addr: Option<SocketAddr> = None;
     let mut keepalive_to: Option<(SocketAddr, Instant)> = None;
@@ -342,6 +344,8 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 controlled = true;
                 virtual_x = 0;
                 edge_hits = 0;
+                release_keys(&mut pressed);
+                shift_down = false;
                 plog!(
                     "[client] controlled; entry at ({x}, {y}) from {}",
                     if entry_edge == 2 { "right" } else { "left" }
@@ -375,6 +379,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                     controlled = false;
                     edge_hits = 0;
                     release_keys(&mut pressed);
+                    shift_down = false;
                     plog!("[client] released at edge");
                 }
             }
@@ -387,12 +392,35 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 if controlled {
                     let scan = packet.a as u16;
                     let down = packet.b != 0;
-                    let extended = packet.c != 0;
-                    win::key_scancode(scan, down, extended);
-                    if down {
-                        pressed.insert((scan, extended));
+                    let is_shift = matches!(scan, 0x2A | 0x36);
+                    let shift = packet.flags & 1 != 0;
+                    if is_shift {
+                        if down != shift_down {
+                            win::key_scancode(0x2A, down, false);
+                            shift_down = down;
+                            if down {
+                                pressed.insert((0x2A, false));
+                            } else {
+                                pressed.remove(&(0x2A, false));
+                            }
+                        }
                     } else {
-                        pressed.remove(&(scan, extended));
+                        if shift != shift_down {
+                            win::key_scancode(0x2A, shift, false);
+                            shift_down = shift;
+                            if shift {
+                                pressed.insert((0x2A, false));
+                            } else {
+                                pressed.remove(&(0x2A, false));
+                            }
+                        }
+                        let extended = packet.c != 0;
+                        win::key_scancode(scan, down, extended);
+                        if down {
+                            pressed.insert((scan, extended));
+                        } else {
+                            pressed.remove(&(scan, extended));
+                        }
                     }
                 }
             }
@@ -405,6 +433,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 if controlled {
                     controlled = false;
                     release_keys(&mut pressed);
+                    shift_down = false;
                     plog!("[client] released by master");
                 }
             }
@@ -486,11 +515,13 @@ fn sender_loop(socket: UdpSocket, rx: Receiver<Event>, stop: Arc<AtomicBool>) {
                 scan,
                 down,
                 extended,
+                shift,
             } => {
                 let mut p = Packet::new(PacketKind::Key, seq);
                 p.a = scan as i32;
                 p.b = down as i32;
                 p.c = extended as i32;
+                p.flags = if shift { 1 } else { 0 };
                 p
             }
             Event::Wheel { delta, horizontal } => {
@@ -668,10 +699,14 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                 return 1;
             }
             if down || up {
+                // Modifier state travels with every key so the client can
+                // re-assert Shift if a modifier packet was lost.
+                let shift = unsafe { GetAsyncKeyState(VK_SHIFT as i32) < 0 };
                 send_event(Event::Key {
                     scan: event.scanCode as u16,
                     down,
                     extended: event.flags & LLKHF_EXTENDED != 0,
+                    shift,
                 });
                 return 1;
             }

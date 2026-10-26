@@ -1,13 +1,13 @@
-# LAN-KVM 1.1.1
+# LAN-KVM 1.1.2
 
-Reliability release: fewer stalls, no surprise control hand-backs, and a fix for
-the 1.1.0 keepalive regression that restarted the session agent every 20–30 s.
+Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
+1.1.0 keepalive regression, and a fix for `Shift + /` on the controlled machine.
 
 ## Download
 
 | File | Size | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.1.exe` | 2.96 MB | `81CEB96BE54229A4D513450ED601612D60E168B2A776331B534150372DEF0BA6` |
+| `LAN-KVM-Setup-1.1.2.exe` | 2.96 MB | `AAFF9ED80CE64F91B79B71187DF1C976005811789EDD034FC39608D470B9473D` |
 
 ## What changed
 
@@ -16,24 +16,31 @@ the 1.1.0 keepalive regression that restarted the session agent every 20–30 s.
 - **10 s liveness window** (was 3 s) and **any packet counts as alive**, including a
   client keepalive. A 1–4 s Wi-Fi stall no longer hands control back.
 - **Frame-coalesced mouse motion** on both ends: the master sends at most 250 packets/s
-  and the client merges a backlog into one relative move. No more "lag then jump".
+  and the client merges a backlog into one relative move.
 - **Edge return is deliberate**: `release_px` default 2 → 10 and two consecutive outward
   packets at the edge are required.
 - **IP changes no longer drop a working session**: link-local/loopback/multicast sources
   are ignored, a new address needs two announcements, and the old address is probed
   before reconnecting.
-- **Debounced health checks**: the service needs 6 failed probes (30 s) before restarting
-  the agent; the app needs 3 misses (15 s) before flipping state.
+- **Debounced health checks**: 6 failed probes (30 s) before the service restarts the
+  agent; 3 misses (15 s) before the app flips state.
 - **1 MB UDP buffers** on both sides.
 
-**1.1.1 hotfix**
+**1.1.1 hotfix (keepalive)**
 
-- Keepalives are only sent after real input, and stop after 5 s, so they never target a
+- Keepalives are only sent after real input and stop after 5 s, so they never target a
   closed probe/engine port.
-- `WSAECONNRESET` / `WSAETIMEDOUT` on UDP receive (an ICMP port-unreachable from a closed
-  port) is treated as a lost datagram instead of killing the listener.
-- If the client listener really dies, the agent exits so the service relaunches it in 5 s
-  instead of leaving a deaf process for 30 s.
+- `WSAECONNRESET` / `WSAETIMEDOUT` on UDP receive (ICMP port-unreachable) is treated as
+  a lost datagram instead of killing the listener.
+- If the client listener really dies, the agent exits so the service relaunches it in 5 s.
+
+**1.1.2 keyboard fix**
+
+- Every key packet now carries the master's Shift state; the client re-asserts it before
+  the key. A single lost Shift packet no longer turns `Shift + /` into `/`.
+- Shift is driven through one scan code, so left/right Shift can never leave a
+  half-pressed modifier; stray extended flags on Shift are ignored.
+- Throttled `session.log` lines report a Shift resync or an injected numpad `/`.
 
 **Diagnostics**
 
@@ -60,14 +67,14 @@ Ethernet on the client is still the single biggest improvement.
 
 # 繁體中文
 
-可靠性修正版：減少卡頓、避免控制突然跳回，並修掉 1.1.0 keepalive 造成
-session agent 每 20–30 秒重啟的問題。
+可靠性修正版：減少卡頓、避免控制突然跳回、修正 keepalive 造成的反覆重啟，
+以及被控端 `Shift + /` 只出現 `/` 的問題。
 
 ## 下載
 
 | 檔案 | 大小 | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.1.exe` | 2.96 MB | `81CEB96BE54229A4D513450ED601612D60E168B2A776331B534150372DEF0BA6` |
+| `LAN-KVM-Setup-1.1.2.exe` | 2.96 MB | `AAFF9ED80CE64F91B79B71187DF1C976005811789EDD034FC39608D470B9473D` |
 
 ## 修改內容
 
@@ -81,11 +88,19 @@ session agent 每 20–30 秒重啟的問題。
 - **健康檢查去抖**：服務端 6 次失敗（30 秒）、App 端 3 次（15 秒）才翻狀態。
 - UDP 緩衝區 1 MB。
 
-**1.1.1 熱修**
+**1.1.1 熱修（keepalive）**
 
-- keepalive 只在收到真正的輸入封包後啟動，且 5 秒沒新輸入就停止，不會再打關閉的埠。
-- UDP 收到 `WSAECONNRESET / WSAETIMEDOUT`（ICMP port unreachable）視為掉包，不再結束迴圈。
-- 若 listener 真的死亡，agent 直接退出，服務 5 秒內重啟（不再留 30 秒殭屍）。
+- keepalive 只在收到真正的輸入封包後啟動，且 5 秒沒新輸入就停止。
+- UDP 收到 `WSAECONNRESET / WSAETIMEDOUT`（ICMP port unreachable）視為掉包。
+- listener 真的死亡時 agent 直接退出，服務 5 秒內重啟。
+
+**1.1.2 鍵盤修正**
+
+- 每個 Key 封包都帶 master 目前的 **Shift 狀態**；client 在注入按鍵前同步，
+  單一 Shift 封包遺失不會再把 `Shift + /` 變成 `/`。
+- Shift 一律用同一個 scan code 驅動，左右 Shift 不會再出現半按狀態；
+  Shift 的 extended 旗標一律忽略。
+- `session.log` 會（每 5 秒最多一行）記錄 Shift 重新同步或收到 numpad `/`。
 
 **診斷**
 

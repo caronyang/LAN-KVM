@@ -331,7 +331,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "lankvm-agent"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "lankvm-platform",
@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "lankvm-app"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "lankvm-clipboard",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "lankvm-clipboard"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -370,11 +370,11 @@ dependencies = [
 
 [[package]]
 name = "lankvm-core"
-version = "1.1.1"
+version = "1.1.2"
 
 [[package]]
 name = "lankvm-devtools"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "lankvm-clipboard",
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "lankvm-files"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "blake3",
@@ -394,18 +394,18 @@ dependencies = [
 
 [[package]]
 name = "lankvm-input"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "lankvm-core",
 ]
 
 [[package]]
 name = "lankvm-net"
-version = "1.1.1"
+version = "1.1.2"
 
 [[package]]
 name = "lankvm-platform"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -418,7 +418,7 @@ dependencies = [
 
 [[package]]
 name = "lankvm-service"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "lankvm-net",
@@ -431,7 +431,7 @@ dependencies = [
 
 [[package]]
 name = "lankvm-setup"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "windows-sys 0.61.2",

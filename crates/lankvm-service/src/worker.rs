@@ -203,6 +203,7 @@ fn injector_main(rx: Receiver<InjectEvent>, desktop: String, desktop_handle: isi
     }
 
     let mut pressed: HashSet<(u16, bool)> = HashSet::new();
+    let mut shift_down = false;
     let mut pending: Option<InjectEvent> = None;
     loop {
         let event = match pending.take() {
@@ -232,26 +233,32 @@ fn injector_main(rx: Receiver<InjectEvent>, desktop: String, desktop_handle: isi
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed);
+                        apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed, &mut shift_down);
                         release_keys(&mut pressed);
                         return;
                     }
                 }
             }
-            apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed);
+            apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed, &mut shift_down);
             continue;
         }
 
-        apply(&desktop, event, &mut pressed);
+        apply(&desktop, event, &mut pressed, &mut shift_down);
     }
     release_keys(&mut pressed);
 }
 
-fn apply(desktop: &str, event: InjectEvent, pressed: &mut HashSet<(u16, bool)>) {
+fn apply(
+    desktop: &str,
+    event: InjectEvent,
+    pressed: &mut HashSet<(u16, bool)>,
+    shift_down: &mut bool,
+) {
     INJECT_COUNT.fetch_add(1, Ordering::Relaxed);
     match event {
         InjectEvent::Switch { ratio, entry_edge } => {
             release_keys(pressed);
+            *shift_down = false;
             inject::clear_fail_streak();
             log(
                 "session",
@@ -287,7 +294,50 @@ fn apply(desktop: &str, event: InjectEvent, pressed: &mut HashSet<(u16, bool)>) 
             scan,
             down,
             extended,
+            shift,
         } => {
+            let is_shift = matches!(scan, 0x2A | 0x36);
+            if is_shift {
+                // Drive Shift through one scan code (LShift) so a lost/odd
+                // RShift packet can never leave the modifier half-pressed.
+                if down != *shift_down {
+                    let _ = win::key_scancode(0x2A, down, false);
+                    *shift_down = down;
+                    if down {
+                        pressed.insert((0x2A, false));
+                    } else {
+                        pressed.remove(&(0x2A, false));
+                    }
+                }
+                return;
+            }
+
+            // Re-assert Shift for ordinary keys when the master's state differs
+            // from ours. A single lost modifier packet would otherwise turn
+            // Shift+/ into '/'.
+            if shift != *shift_down {
+                let _ = win::key_scancode(0x2A, shift, false);
+                *shift_down = shift;
+                if shift {
+                    pressed.insert((0x2A, false));
+                } else {
+                    pressed.remove(&(0x2A, false));
+                }
+                key_warn(
+                    desktop,
+                    if shift {
+                        "shift state resynced (down)"
+                    } else {
+                        "shift state resynced (up)"
+                    },
+                );
+            }
+
+            // Shift is never extended; a stray E0 would inject numpad '/'.
+            let extended = if is_shift { false } else { extended };
+            if scan == 0x35 && extended {
+                key_warn(desktop, "numpad divide (extended 0x35) injected");
+            }
             let ok = win::key_scancode(scan, down, extended);
             inject::note_result(ok);
             if !ok {
@@ -310,7 +360,23 @@ fn apply(desktop: &str, event: InjectEvent, pressed: &mut HashSet<(u16, bool)>) 
             inject::clear_fail_streak();
             log("session", format!("{desktop}: inject Release"));
             release_keys(pressed);
+            *shift_down = false;
         }
+    }
+}
+
+/// Anomaly logging with a 5-second throttle so a real problem is visible in
+/// the logs without flooding them.
+fn key_warn(desktop: &str, msg: &str) {
+    static LAST_WARN_MS: AtomicU64 = AtomicU64::new(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let last = LAST_WARN_MS.load(Ordering::Relaxed);
+    if now.saturating_sub(last) >= 5_000 {
+        LAST_WARN_MS.store(now, Ordering::Relaxed);
+        log("session", format!("{desktop}: {msg}"));
     }
 }
 

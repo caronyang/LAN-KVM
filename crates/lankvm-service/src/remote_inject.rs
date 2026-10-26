@@ -83,11 +83,12 @@ fn encode(event: &InjectEvent) -> [u8; 16] {
             scan,
             down,
             extended,
+            shift,
         } => (
             4u8,
             scan as i32,
             down as i32,
-            extended as i32,
+            (extended as i32) | ((shift as i32) << 8),
         ),
         InjectEvent::Wheel { delta, horizontal } => (5u8, delta, horizontal as i32, 0),
         InjectEvent::Release => (6u8, 0, 0, 0),

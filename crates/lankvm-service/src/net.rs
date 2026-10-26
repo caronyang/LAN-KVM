@@ -226,6 +226,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                         scan: packet.a as u16,
                         down: packet.b != 0,
                         extended: packet.c != 0,
+                        shift: packet.flags & 1 != 0,
                     });
                 }
             }

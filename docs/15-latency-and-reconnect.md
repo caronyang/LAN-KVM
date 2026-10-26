@@ -1,9 +1,9 @@
 # 延遲與「跳回」修正（v1.1）
 
 > 日期：2026-10-26
-> 版本：`1.1.1`（1.1.0 的 keepalive 熱修）
-> 產物：`dist-app/LAN-KVM-Setup-1.1.1.exe`
-> SHA-256：`81CEB96BE54229A4D513450ED601612D60E168B2A776331B534150372DEF0BA6`
+> 版本：`1.1.2`
+> 產物：`dist-app/LAN-KVM-Setup-1.1.2.exe`
+> SHA-256：`AAFF9ED80CE64F91B79B71187DF1C976005811789EDD034FC39608D470B9473D`
 
 > **1.1.1 熱修**：1.1.0 新增的 keepalive 會打到已關閉的 UDP 埠，Windows 回應 ICMP
 > port-unreachable，client 的接收迴圈以 `WSAECONNRESET / WSAETIMEDOUT` 結束，
@@ -229,3 +229,48 @@ master 端同理：PING 打到已關閉的資料埠時，接收執行緒也可�
 ### 6.5 這次一併調整
 
 - `release_px` 舊值 1 或 2 一律視為 10（`config.txt` 與 `app.json` 都適用）。
+
+---
+
+## 7. 1.1.2：被控端 Shift + `/` 只出現 `/`
+
+### 7.1 症狀
+
+在 B（被控制的那台）按 **Shift + `/`** 不會出現 `?`，只會出現 `/`。
+
+### 7.2 分析
+
+用封包直接對 client engine 注入，逐一驗證：
+
+| 送出的內容 | 結果 |
+|---|---|
+| 正常 Shift 按下 + `/` | `?` ✓ |
+| `/` 封包帶 **extended**（numpad `/`） | **`/`**（Shift 完全無效） |
+| 只有 `/`（Shift 封包遺失） | **`/`** |
+
+所以只有兩種可能：
+
+1. **`/` 被封成 numpad `/`**（extended 0x35）→ 它本來就不受 Shift 影響。
+2. **Shift 的 keydown 封包遺失/被忽略**（UDP 掉包、或在 Switch/Release 時被放掉）。
+
+### 7.3 修正
+
+- **master 在每個 Key 封包帶上目前的 Shift 狀態**（`packet.flags` bit 0）。
+- **client 在注入任何按鍵前同步 Shift**：
+  - 若 master 說 Shift 是 down 而本地不是 → 先補一個 LShift down。
+  - 反之 → 先補 LShift up。
+- **Shift 一律用同一個 scan code（0x2A）驅動**：實體左右 Shift 都轉成同一個狀態，
+  不會再出現「按了 RShift、放開時只放 LShift」的半按狀態。
+- **Shift 的 extended 旗標一律忽略**（Shift 永遠不是 extended key）。
+- Winlogon helper（登入畫面）與 PoC client 套用同樣邏輯。
+
+副作用：client 端只看得到 LShift，玩遊戲時無法區分左右 Shift；打字不受影響。
+
+### 7.4 診斷 log（`session.log`，最多每 5 秒一行）
+
+```
+Default: shift state resynced (down)      ← 有 Shift 封包遺失，已自動補
+Default: numpad divide (extended 0x35) injected   ← 收到的是數字鍵盤的 '/'
+```
+
+若你再次遇到，請把這兩行（以及發生時間）一起給我。

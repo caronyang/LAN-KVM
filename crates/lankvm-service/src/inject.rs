@@ -29,6 +29,9 @@ pub enum InjectEvent {
         scan: u16,
         down: bool,
         extended: bool,
+        /// Shift state at the time of the event, from the master. Lets the
+        /// client re-assert Shift if the modifier packet was lost.
+        shift: bool,
     },
     Wheel {
         delta: i32,
