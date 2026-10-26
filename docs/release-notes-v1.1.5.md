@@ -1,4 +1,4 @@
-# LAN-KVM 1.1.4
+# LAN-KVM 1.1.5
 
 Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 1.1.0 keepalive regression, and a fix for `Shift + /` on the controlled machine.
@@ -7,7 +7,7 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 
 | File | Size | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.4.exe` | 2.96 MB | `B9780DDD6704554C2568E4EAF5A0CE016412275EBD67740E8C22B30ED6CB595B` |
+| `LAN-KVM-Setup-1.1.5.exe` | 2.96 MB | `45ECBF85133E7617D7D92A0249C616A172884D2AD1B6332C09B9ADE213C18010` |
 
 ## What changed
 
@@ -68,6 +68,16 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 - When the client sees 15 s of silence it releases keys *and* tells the master,
   so a recovered master does not keep sending input into a deaf client.
 
+**1.1.5 emergency hotkey fix**
+
+- The engine hotkey used `GetAsyncKeyState` to check Ctrl/Alt/Shift, but while
+  controlling it swallows every key, so the check always failed. The hook now
+  tracks the modifiers itself.
+- The app retries registering `Ctrl+Alt+Shift+R` every 2 s instead of trying once,
+  so a previous hung instance can no longer leave you without an escape hatch.
+- The service and session agent now log Rust panics to `service.log`
+  (`PANIC: ...`), which explains the `0xc0000409` WER entries seen at boot.
+
 **Diagnostics**
 
 - `engine.log` every 5 s: `[net] tx/rx/rtt/rtt_max/motion/silent/remote`.
@@ -100,7 +110,7 @@ Ethernet on the client is still the single biggest improvement.
 
 | 檔案 | 大小 | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.4.exe` | 2.96 MB | `B9780DDD6704554C2568E4EAF5A0CE016412275EBD67740E8C22B30ED6CB595B` |
+| `LAN-KVM-Setup-1.1.5.exe` | 2.96 MB | `45ECBF85133E7617D7D92A0249C616A172884D2AD1B6332C09B9ADE213C18010` |
 
 ## 修改內容
 

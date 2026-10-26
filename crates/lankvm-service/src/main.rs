@@ -34,6 +34,12 @@ fn main() -> std::process::ExitCode {
     use std::env;
     use std::process::ExitCode;
 
+    // A panic in a service/agent has no console; without this the process just
+    // dies with 0xc0000409 and WER shows nothing useful.
+    std::panic::set_hook(Box::new(|info| {
+        logger::log("service", format!("PANIC: {info}"));
+    }));
+
     fn run() -> anyhow::Result<()> {
         let mut args = env::args().skip(1);
         match args.next().as_deref() {

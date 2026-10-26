@@ -88,9 +88,13 @@ static RTT_MAX_WINDOW: AtomicU64 = AtomicU64::new(0);
 static LAST_RTT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_RTT_LOG_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_LOCAL_WARN_MS: AtomicU64 = AtomicU64::new(0);
-/// Physical Shift state as seen by the hook. `GetAsyncKeyState` is unusable
-/// while we swallow the key (returning 1 prevents the async state update).
-static SHIFT_DOWN: AtomicBool = AtomicBool::new(false);
+/// Physical modifier state as seen by the hook. `GetAsyncKeyState` is useless
+/// while we swallow keys (returning 1 prevents the async state update), so the
+/// emergency hotkey must use this instead.
+static MODS_DOWN: AtomicU32 = AtomicU32::new(0);
+const MOD_CTRL: u32 = 0x1;
+const MOD_ALT: u32 = 0x2;
+const MOD_SHIFT: u32 = 0x4;
 
 /// Bit 0: Shift is down. Bit 1: the master actually reported the state.
 /// Old peers send flags == 0, which must not be read as "Shift up".
@@ -751,6 +755,22 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
             let message = wparam as u32;
             let down = matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN);
             let up = matches!(message, WM_KEYUP | WM_SYSKEYUP);
+            let scan = event.scanCode as u16;
+            // Track modifiers ourselves: returning 1 from this hook swallows the
+            // key, so the system's async key state is never updated.
+            let mod_bit = match scan {
+                0x1D => Some(MOD_CTRL),
+                0x38 => Some(MOD_ALT),
+                0x2A | 0x36 => Some(MOD_SHIFT),
+                _ => None,
+            };
+            if let Some(bit) = mod_bit {
+                if down {
+                    MODS_DOWN.fetch_or(bit, Ordering::SeqCst);
+                } else if up {
+                    MODS_DOWN.fetch_and(!bit, Ordering::SeqCst);
+                }
+            }
             if down
                 && (event.vkCode == VK_Q as u32 || event.vkCode == VK_R as u32)
                 && hotkey_modifiers_down()
@@ -759,17 +779,11 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                 return 1;
             }
             if down || up {
-                let scan = event.scanCode as u16;
-                // Track Shift ourselves: returning 1 from this hook swallows the
-                // key, so the system's async key state is never updated.
-                if matches!(scan, 0x2A | 0x36) {
-                    SHIFT_DOWN.store(down, Ordering::SeqCst);
-                }
                 send_event(Event::Key {
                     scan,
                     down,
                     extended: event.flags & LLKHF_EXTENDED != 0,
-                    shift: SHIFT_DOWN.load(Ordering::SeqCst),
+                    shift: MODS_DOWN.load(Ordering::SeqCst) & MOD_SHIFT != 0,
                 });
                 return 1;
             }
@@ -839,9 +853,7 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
 }
 
 unsafe fn hotkey_modifiers_down() -> bool {
-    GetAsyncKeyState(VK_CONTROL as i32) < 0
-        && GetAsyncKeyState(VK_MENU as i32) < 0
-        && GetAsyncKeyState(VK_SHIFT as i32) < 0
+    MODS_DOWN.load(Ordering::SeqCst) & (MOD_CTRL | MOD_ALT | MOD_SHIFT) == (MOD_CTRL | MOD_ALT | MOD_SHIFT)
 }
 
 fn create_raw_window() -> Result<HWND> {
@@ -1035,7 +1047,17 @@ fn do_switch(cursor: Point, bounds: Rect) {
     CURSOR_HIDDEN.store(true, Ordering::SeqCst);
     // A modifier may already be held when the user crosses the edge; the hook
     // never saw that keydown, so seed the state from the async key state.
-    SHIFT_DOWN.store(unsafe { GetAsyncKeyState(VK_SHIFT as i32) < 0 }, Ordering::SeqCst);
+    let mut mods = 0u32;
+    if unsafe { GetAsyncKeyState(VK_CONTROL as i32) < 0 } {
+        mods |= MOD_CTRL;
+    }
+    if unsafe { GetAsyncKeyState(VK_MENU as i32) < 0 } {
+        mods |= MOD_ALT;
+    }
+    if unsafe { GetAsyncKeyState(VK_SHIFT as i32) < 0 } {
+        mods |= MOD_SHIFT;
+    }
+    MODS_DOWN.store(mods, Ordering::SeqCst);
     LAST_SEEN_MS.store(now_ms(), Ordering::SeqCst);
     // Start from a clean accumulator: the click that crossed the edge should
     // not be replayed as remote motion.
@@ -1069,7 +1091,7 @@ fn do_release(reason: &'static str) {
     send_event(Event::Release { reason });
     win::release_clip();
     restore_cursor();
-    SHIFT_DOWN.store(false, Ordering::SeqCst);
+    MODS_DOWN.store(0, Ordering::SeqCst);
     PENDING_DX.store(0, Ordering::SeqCst);
     PENDING_DY.store(0, Ordering::SeqCst);
     MOTION_DIRTY.store(false, Ordering::SeqCst);
@@ -1188,5 +1210,21 @@ impl Drop for CursorGuard {
     fn drop(&mut self) {
         win::release_clip();
         restore_cursor();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hotkey_requires_all_three_modifiers() {
+        MODS_DOWN.store(MOD_CTRL | MOD_ALT, Ordering::SeqCst);
+        assert!(!unsafe { hotkey_modifiers_down() });
+        MODS_DOWN.store(MOD_CTRL | MOD_SHIFT, Ordering::SeqCst);
+        assert!(!unsafe { hotkey_modifiers_down() });
+        MODS_DOWN.store(MOD_CTRL | MOD_ALT | MOD_SHIFT, Ordering::SeqCst);
+        assert!(unsafe { hotkey_modifiers_down() });
+        MODS_DOWN.store(0, Ordering::SeqCst);
     }
 }

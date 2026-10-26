@@ -1,6 +1,6 @@
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,15 @@ const TRAY_UID: u32 = 1;
 const HOTKEY_ID: i32 = 0x4B01;
 
 static APP: OnceLock<Arc<App>> = OnceLock::new();
+static HOTKEY_OK: AtomicBool = AtomicBool::new(false);
+
+/// The hotkey is the last escape hatch, so keep retrying: a previous instance
+/// that hung without exiting still owns the registration until it dies.
+fn try_register_hotkey(hwnd: HWND) -> bool {
+    let mods = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
+    unsafe { RegisterHotKey(hwnd, HOTKEY_ID, mods, b'R' as u32) != 0 }
+}
+
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
@@ -92,11 +101,11 @@ pub fn run(app: Arc<App>) -> ! {
 
         // Global emergency hotkey. Registered by the app (not the engine) so it
         // still works when the engine is wedged and the cursor is clipped.
-        let mods = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
-        if RegisterHotKey(hwnd, HOTKEY_ID, mods, b'R' as u32) == 0 {
-            app.log("tray: emergency hotkey Ctrl+Alt+Shift+R could not be registered");
-        } else {
+        if try_register_hotkey(hwnd) {
+            HOTKEY_OK.store(true, Ordering::Relaxed);
             app.log("tray: emergency hotkey Ctrl+Alt+Shift+R registered");
+        } else {
+            app.log("tray: emergency hotkey Ctrl+Alt+Shift+R not registered yet (will retry)");
         }
 
         let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
@@ -197,6 +206,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lpar
         }
         WM_TIMER => {
             if let Some(app) = APP.get() {
+                if !HOTKEY_OK.load(Ordering::Relaxed) && try_register_hotkey(hwnd) {
+                    HOTKEY_OK.store(true, Ordering::Relaxed);
+                    app.log("tray: emergency hotkey Ctrl+Alt+Shift+R registered (retry)");
+                }
                 let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
                 nid.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
                 nid.hWnd = hwnd;

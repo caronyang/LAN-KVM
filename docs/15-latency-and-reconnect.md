@@ -1,9 +1,9 @@
 # 延遲與「跳回」修正（v1.1）
 
 > 日期：2026-10-26
-> 版本：`1.1.4`
-> 產物：`dist-app/LAN-KVM-Setup-1.1.4.exe`
-> SHA-256：`B9780DDD6704554C2568E4EAF5A0CE016412275EBD67740E8C22B30ED6CB595B`
+> 版本：`1.1.5`
+> 產物：`dist-app/LAN-KVM-Setup-1.1.5.exe`
+> SHA-256：`45ECBF85133E7617D7D92A0249C616A172884D2AD1B6332C09B9ADE213C18010`
 
 > **1.1.1 熱修**：1.1.0 新增的 keepalive 會打到已關閉的 UDP 埠，Windows 回應 ICMP
 > port-unreachable，client 的接收迴圈以 `WSAECONNRESET / WSAETIMEDOUT` 結束，
@@ -358,3 +358,45 @@ heartbeat 執行緒因此停止 → **timeout 永遠不會觸發**。
 
 > 注意：**兩台都要安裝 1.1.4**。混用 1.1.2/1.1.4 可以運作（valid bit 保護），
 > 但緊急熱鍵 `Ctrl+Alt+Shift+R` 只有 1.1.3 以後的 App 才有。
+
+---
+
+## 10. 1.1.5：控制中熱鍵無效
+
+### 10.1 症狀
+
+控制 B 時，B 重裝 LAN-KVM → A 的游標被釘住/隱藏、回不來；
+**Ctrl+Alt+Shift+Q 與 R 都沒反應**，最後只能重開機。
+
+### 10.2 原因
+
+1. **engine 的熱鍵檢查用錯狀態來源**
+   `hotkey_modifiers_down()` 用 `GetAsyncKeyState(VK_CONTROL/VK_MENU/VK_SHIFT)`。
+   但控制期間 hook 會**吞掉所有按鍵**（回傳 1），修飾鍵的 keydown 也一樣；
+   `GetAsyncKeyState` 因此不可靠 → 熱鍵永遠判定「修飾鍵沒按」→ Q 無效。
+
+2. **App 的 R 熱鍵註冊可能失敗**
+   `RegisterHotKey` 在啟動時只試一次。若前一個（卡住的）App 實例還活著，
+   它仍持有這組熱鍵，新實例就註冊失敗——`app.log` 會少一行
+   `tray: emergency hotkey ... registered`。這時 R 也不會有效。
+
+3. **A 的服務在開機/登入前會崩潰**
+   Windows 事件記錄顯示 `lankvm-service.exe` 1.1.5 之前版本在每次開機後
+   出現 `0xc0000409`（ucrtbase）兩次，第三次才穩定。這次加上 panic 記錄，
+   下次會直接在 `service.log` 看到 `PANIC: ...`。
+
+### 10.3 修正
+
+- **hook 自己追蹤 Ctrl / Alt / Shift**（`MODS_DOWN` bitmask），熱鍵改用這個狀態判斷；
+  進入控制時用 `GetAsyncKeyState` 初始化（切換前就按著也正確）。
+- **App 每 2 秒重試註冊 R 熱鍵**，成功後才停；log 會寫 `registered` 或
+  `registered (retry)`。
+- **service / session agent 加上 panic hook**：任何 panic 都會寫入
+  `service.log`（`PANIC: <位置與訊息>`），不再只有 WER 的 0xc0000409。
+- 10 秒自動取回仍然保留；但現在 **Q/R 會立即生效**，不需要重開機。
+
+### 10.4 驗證
+
+- `cargo test -p lankvm-platform`：新增熱鍵修飾鍵的單元測試（三個鍵缺一不可）。
+- 熱鍵註冊：`app.log` 應有 `tray: emergency hotkey Ctrl+Alt+Shift+R registered`。
+- 控制中按 `Ctrl+Alt+Shift+Q` 或 `R`：engine 會立刻 `remote control OFF (hotkey...)`。
