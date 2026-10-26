@@ -96,6 +96,7 @@
   </select>
   <button class="small" onclick="scan()" data-i18n="rescan">重新掃描</button>
   <button class="small" onclick="collectLogs()" data-i18n="collectLogs">收集紀錄</button>
+  <button class="small danger" onclick="emergencyRelease()" data-i18n="emergency" title="Ctrl+Alt+Shift+R">強制取回滑鼠</button>
   <button class="small danger" onclick="quitApp()" data-i18n="quit">結束程式</button>
 </header>
 
@@ -243,6 +244,9 @@ const I18N = {
     enterCodeHint: "請看 <strong>{name}</strong> 螢幕上顯示的 3 位數字。",
     confirm: "確定",
     rescanned: "已重新掃描",
+    emergency: "強制取回滑鼠",
+    emergencyConfirm: "強制結束目前連線並取回滑鼠？（熱鍵 Ctrl+Alt+Shift+R）",
+    emergencyDone: "已強制取回滑鼠（60 秒內不自動重連）",
     pairFailed: "配對失敗",
     unpairConfirm: "解除配對後就不會再自動連線，確定？",
     connectFailed: "連線失敗",
@@ -327,6 +331,9 @@ const I18N = {
     enterCodeHint: "Look at the 3-digit code shown on <strong>{name}</strong>.",
     confirm: "OK",
     rescanned: "Rescanned",
+    emergency: "Force release mouse",
+    emergencyConfirm: "Force-stop the current session and take the mouse back? (hotkey Ctrl+Alt+Shift+R)",
+    emergencyDone: "Mouse released (no auto-connect for 60 s)",
     pairFailed: "Pairing failed",
     unpairConfirm: "Unpairing stops auto-connect. Continue?",
     connectFailed: "Connection failed",
@@ -604,6 +611,12 @@ async function saveSettings() {
   refresh();
 }
 async function togglePause() { await api("/api/settings", { paused: !S.paused }); refresh(); }
+async function emergencyRelease() {
+  if (!confirm(t("emergencyConfirm"))) return;
+  await api("/api/emergency", {});
+  toast(t("emergencyDone"));
+  refresh();
+}
 async function quitApp() {
   if (!confirm(t("quitConfirm"))) return;
   await api("/api/quit");

@@ -156,6 +156,10 @@ pub fn run_master(
         .connect((peer, port))
         .with_context(|| format!("failed to resolve/connect to {peer}:{port}"))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    // Sends must never block: when the peer disappears the Wi-Fi/ARP path can
+    // stall for seconds and a blocking send would freeze the heartbeat thread
+    // (and with it the release timeout).
+    let _ = socket.set_write_timeout(Some(Duration::from_millis(100)));
     // Bursts of input plus PONGs are tiny; a larger buffer rides out Wi-Fi
     // stalls without dropping packets.
     let sock = socket2::SockRef::from(&socket);
@@ -190,6 +194,11 @@ pub fn run_master(
     let heartbeat_stop = stop.clone();
     let heartbeat_thread =
         thread::spawn(move || heartbeat_loop(heartbeat_socket, heartbeat_stop));
+
+    // Independent watchdog: only reads atomics and posts a message, so a stuck
+    // network send can never keep the cursor clipped/hidden forever.
+    let watchdog_stop = stop.clone();
+    let watchdog_thread = thread::spawn(move || watchdog_loop(watchdog_stop));
 
     let hwnd = create_raw_window()?;
     register_raw_mouse(hwnd)?;
@@ -251,6 +260,7 @@ pub fn run_master(
     let _ = sender_thread.join();
     let _ = receiver_thread.join();
     let _ = heartbeat_thread.join();
+    let _ = watchdog_thread.join();
 
     println!("[master] stopped");
     Ok(())
@@ -266,6 +276,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     let socket = UdpSocket::bind(("0.0.0.0", port))
         .with_context(|| format!("failed to bind UDP port {port}"))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    let _ = socket.set_write_timeout(Some(Duration::from_millis(100)));
     let sock = socket2::SockRef::from(&socket);
     let _ = sock.set_recv_buffer_size(1 << 20);
     let _ = sock.set_send_buffer_size(1 << 20);
@@ -294,9 +305,16 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
     let mut master_addr: Option<SocketAddr> = None;
     let mut keepalive_to: Option<(SocketAddr, Instant)> = None;
     let mut last_keepalive = Instant::now();
+    let mut last_packet = Instant::now();
     let mut buf = [0u8; 64];
 
     while !stop.load(Ordering::SeqCst) && !STOP_REQUESTED.load(Ordering::SeqCst) {
+        if controlled && last_packet.elapsed() > Duration::from_secs(15) {
+            controlled = false;
+            release_keys(&mut pressed);
+            shift_down = false;
+            plog!("[client] master silent 15 s; released keys");
+        }
         // Unsolicited keepalive so the master's liveness does not depend on its
         // PING surviving the network. Only armed by real input, and dropped
         // after 5 s, so we never spray a closed port (ICMP -> WSAECONNRESET).
@@ -321,6 +339,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
         let Some(packet) = Packet::decode(&buf[..n]) else {
             continue;
         };
+        last_packet = Instant::now();
         master_addr = Some(addr);
         if !matches!(packet.kind, PacketKind::Ping | PacketKind::Pong) {
             keepalive_to = Some((addr, Instant::now()));
@@ -615,6 +634,40 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
     }
 }
 
+/// Independent liveness check. Runs in its own thread and never performs I/O,
+/// so the master always hands control back even if the network stack hangs.
+fn watchdog_loop(stop: Arc<AtomicBool>) {
+    let mut soft_since: Option<Instant> = None;
+    while !stop.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(250));
+        if !REMOTE.load(Ordering::SeqCst) {
+            soft_since = None;
+            continue;
+        }
+        let last = LAST_SEEN_MS.load(Ordering::SeqCst);
+        let age = now_ms().saturating_sub(last);
+        if last == 0 || age <= PEER_TIMEOUT_MS {
+            soft_since = None;
+            continue;
+        }
+        match soft_since {
+            None => {
+                soft_since = Some(Instant::now());
+                plog!("[master] watchdog: peer silent for {age} ms; releasing control");
+                post_release("timeout");
+            }
+            Some(since) if since.elapsed() > Duration::from_secs(5) => {
+                // The soft release did not reach the message loop. Killing the
+                // process is the only guaranteed way to drop ClipCursor, the
+                // cursor-hider window and the hidden-cursor count.
+                plog!("[master] watchdog: release did not take effect; terminating the engine");
+                std::process::exit(4);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn heartbeat_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
     let mut last_stats = Instant::now();
     while !stop.load(Ordering::SeqCst) {
@@ -630,15 +683,6 @@ fn heartbeat_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
         }
 
         send_ping(&socket);
-
-        if REMOTE.load(Ordering::SeqCst) {
-            let last = LAST_SEEN_MS.load(Ordering::SeqCst);
-            let age = now_ms().saturating_sub(last);
-            if last != 0 && age > PEER_TIMEOUT_MS {
-                plog!("[master] peer silent for {age} ms; releasing control");
-                post_release("timeout");
-            }
-        }
 
         if last_stats.elapsed() >= Duration::from_secs(5) {
             last_stats = Instant::now();

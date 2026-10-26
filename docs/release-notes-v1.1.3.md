@@ -1,4 +1,4 @@
-# LAN-KVM 1.1.2
+# LAN-KVM 1.1.3
 
 Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 1.1.0 keepalive regression, and a fix for `Shift + /` on the controlled machine.
@@ -7,7 +7,7 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
 
 | File | Size | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.2.exe` | 2.96 MB | `AAFF9ED80CE64F91B79B71187DF1C976005811789EDD034FC39608D470B9473D` |
+| `LAN-KVM-Setup-1.1.3.exe` | 2.96 MB | `2416F34B4A8781E439D50AD8B313B3A7490461341CE389A3C1026444B7D87F5A` |
 
 ## What changed
 
@@ -42,6 +42,20 @@ Reliability release: fewer stalls, no surprise control hand-backs, a fix for the
   half-pressed modifier; stray extended flags on Shift are ignored.
 - Throttled `session.log` lines report a Shift resync or an injected numpad `/`.
 
+**1.1.3 emergency / stuck cursor**
+
+- UDP sends now have a 100 ms timeout, so a vanished peer or an exhausted socket
+  buffer can no longer freeze the heartbeat thread.
+- An independent watchdog releases control after 10 s of silence; if the release
+  cannot be processed within 5 s it terminates the engine, which makes Windows
+  drop ClipCursor, the cursor-hider window and the hidden-cursor count.
+- **New global hotkey `Ctrl+Alt+Shift+R`** (registered by the app, so it works even
+  if the engine is wedged): force-stop the session and take the mouse back.
+  Also available in the tray menu, the UI (red button) and `POST /api/emergency`.
+- Quitting the app now releases the session first.
+- The client releases held keys after 15 s without master traffic.
+- `engine.log` is appended (with a start marker) instead of overwritten; rotates at 8 MB.
+
 **Diagnostics**
 
 - `engine.log` every 5 s: `[net] tx/rx/rtt/rtt_max/motion/silent/remote`.
@@ -74,7 +88,7 @@ Ethernet on the client is still the single biggest improvement.
 
 | 檔案 | 大小 | SHA-256 |
 |---|---|---|
-| `LAN-KVM-Setup-1.1.2.exe` | 2.96 MB | `AAFF9ED80CE64F91B79B71187DF1C976005811789EDD034FC39608D470B9473D` |
+| `LAN-KVM-Setup-1.1.3.exe` | 2.96 MB | `2416F34B4A8781E439D50AD8B313B3A7490461341CE389A3C1026444B7D87F5A` |
 
 ## 修改內容
 

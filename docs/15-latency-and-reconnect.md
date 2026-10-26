@@ -1,9 +1,9 @@
 # 延遲與「跳回」修正（v1.1）
 
 > 日期：2026-10-26
-> 版本：`1.1.2`
-> 產物：`dist-app/LAN-KVM-Setup-1.1.2.exe`
-> SHA-256：`AAFF9ED80CE64F91B79B71187DF1C976005811789EDD034FC39608D470B9473D`
+> 版本：`1.1.3`
+> 產物：`dist-app/LAN-KVM-Setup-1.1.3.exe`
+> SHA-256：`2416F34B4A8781E439D50AD8B313B3A7490461341CE389A3C1026444B7D87F5A`
 
 > **1.1.1 熱修**：1.1.0 新增的 keepalive 會打到已關閉的 UDP 埠，Windows 回應 ICMP
 > port-unreachable，client 的接收迴圈以 `WSAECONNRESET / WSAETIMEDOUT` 結束，
@@ -274,3 +274,46 @@ Default: numpad divide (extended 0x35) injected   ← 收到的是數字鍵盤�
 ```
 
 若你再次遇到，請把這兩行（以及發生時間）一起給我。
+
+---
+
+## 8. 1.1.3：被控端斷線時游標不回、與緊急取回
+
+### 8.1 症狀
+
+控制 B 時，B 斷線或 B 的服務停止，**A 的滑鼠不會回來**（游標被釘住/隱藏），
+只能重開 App 才恢復。
+
+### 8.2 根因
+
+原本的 10 秒 timeout 是跑在 heartbeat 執行緒裡，而該執行緒會呼叫 `socket.send()`。
+UDP socket 是**阻塞模式**；當 B 消失、ARP/ICMP 卡住或系統緩衝耗盡時，
+`send()` 會卡住（A 的 `app.log` 就看過 `os error 10055` = WSAENOBUFS），
+heartbeat 執行緒因此停止 → **timeout 永遠不會觸發**。
+
+（另外 `engine.log` 每次啟動都被覆蓋，所以上一輪卡住的紀錄消失了。）
+
+### 8.3 修正
+
+| 層級 | 修正 |
+|---|---|
+| socket | master / client 的 UDP 都設 **100 ms send timeout**，送不出去就放棄，不會卡住 |
+| engine watchdog | **獨立執行緒**只讀 atomics、不做 I/O；10 秒沒收到封包就送出 release。若 5 秒後 `REMOTE` 仍是 true（表示主迴圈卡死），**直接結束 engine 行程**，由作業系統強制釋放 ClipCursor / 隱藏游標 / overlay |
+| 緊急熱鍵 | App（托盤行程）註冊 **`Ctrl+Alt+Shift+R`**：即使 engine 卡死也能作用。它會砍掉 engine（必要時 kill）並在 60 秒內不自動重連 |
+| 托盤 / UI | 托盤選單「強制取回滑鼠」；UI 右上角紅色「強制取回滑鼠」按鈕；`POST /api/emergency` |
+| 結束程式 | `/api/quit` 與托盤結束前都會先做一次 emergency release |
+| client | 15 秒沒收到 master 任何封包時，**放掉已按下的按鍵**（避免 Ctrl/Shift 卡住），並停止注入 |
+| 診斷 | `engine.log` 改為**附加**（每次啟動寫一行 `===== engine ... start =====`），超過 8 MB 才清空 |
+
+熱鍵：
+
+| 熱鍵 | 作用 | 何時有效 |
+|---|---|---|
+| `Ctrl+Alt+Shift+Q` | 正常釋放（engine 的 LL hook） | engine 正常時 |
+| `Ctrl+Alt+Shift+R` | **強制**取回：終止 engine、清掉游標狀態、60 秒不重連 | engine 卡死時也能用 |
+
+### 8.4 驗證
+
+- `app.log` 應出現 `tray: emergency hotkey Ctrl+Alt+Shift+R registered`。
+- 按熱鍵或呼叫 API 後：`EMERGENCY release (hotkey/api)`、`engine master stopped`。
+- 這次也實測：API 觸發後 engine 行程結束、session 清除。

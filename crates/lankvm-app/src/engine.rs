@@ -1,4 +1,5 @@
-use std::fs::{self, File};
+use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering;
@@ -39,8 +40,23 @@ fn spawn(app: &Arc<App>, mut args: Vec<String>, role: &str, peer_id: &str, peer_
     args.push("--parent-pid".to_string());
     args.push(std::process::id().to_string());
 
-    let log = File::create(engine_log_path()).context("create engine.log")?;
+    let log_path = engine_log_path();
+    // Keep older engine runs: overwriting lost the log of the run that hung.
+    if fs::metadata(&log_path).map(|m| m.len() > 8 * 1024 * 1024).unwrap_or(false) {
+        let _ = fs::remove_file(&log_path);
+    }
+    let mut log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .context("open engine.log")?;
+    let _ = writeln!(
+        log,
+        "===== engine {role} start {} peer={peer_ip}:{data_port} =====",
+        crate::state::now_hms()
+    );
     let log2 = log.try_clone().context("clone engine.log")?;
+
 
     let exe = std::env::current_exe().context("current_exe")?;
     let mut command = Command::new(exe);
@@ -170,6 +186,24 @@ pub fn stop_session(app: &Arc<App>, send_peer_stop: bool) {
     if send_peer_stop {
         crate::net::send_session_stop(app, &session.peer_ip, session.peer_id.as_str());
     }
+}
+
+pub fn emergency_release(app: &Arc<App>, reason: &str) {
+    let had_session = app
+        .session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    app.log(format!(
+        "EMERGENCY release ({reason}){}",
+        if had_session { "" } else { " - no active session" }
+    ));
+    // stop_session writes the stop file, waits up to 3 s, then kills the
+    // engine. Killing it is what guarantees the cursor comes back even if the
+    // engine's message loop is wedged.
+    stop_session(app, true);
+    *app.suppress_until.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some(Instant::now() + Duration::from_secs(60));
 }
 
 pub fn engine_alive(app: &Arc<App>) -> bool {

@@ -1,7 +1,7 @@
-LAN-KVM 1.1.2
+LAN-KVM 1.1.3
 ==========
 
-這是一個**單一安裝檔**：LAN-KVM-Setup-1.1.2.exe
+這是一個**單一安裝檔**：LAN-KVM-Setup-1.1.3.exe
 App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝精靈有 English / 繁體中文可選；程式 UI 預設 English，右上角可切換中文。
 
@@ -13,7 +13,7 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝
 ----
 1. 建議先從系統匣右鍵「停止連線」再安裝（避免升級時中斷遠端控制）。
-2. 執行 LAN-KVM-Setup-1.1.2.exe（會跳 UAC，按「是」）。
+2. 執行 LAN-KVM-Setup-1.1.3.exe（會跳 UAC，按「是」）。
 3. 安裝到 C:\Program Files\LAN-KVM，並自動：
    - 建立防火牆規則：UDP 45870 / 45871 / 45872、TCP 45873（log 回傳）、TCP 45875（剪貼簿）
    - 安裝並啟動 LAN-KVM SYSTEM 服務（登入畫面 / UAC），session agent 不顯示 console
@@ -53,11 +53,23 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 ----
 - 在 A 的 UI 設定「對方螢幕在我的右邊/左邊」。
 - A 的滑鼠推過設定的邊界 → 控制 B。
-- 把游標推回 B 的進入邊界（越界 2px）→ 控制權回到 A。
+- 把游標推回 B 的進入邊界（預設越界 10 px）→ 控制權回到 A。
 - B 自己的滑鼠/鍵盤不會改變連線狀態（設計如此）。
 - 門檻可調：切入推力 px、時間窗 ms、回切越界 px。
 - 控制 B 時，**A 的游標會消失**（全螢幕透明 overlay + 1×1 ClipCursor），
   不會再看到游標沿螢幕邊緣上下移動；回切時立即恢復。
+
+卡住 / 緊急取回
+---------------
+| 熱鍵 | 作用 |
+|------|------|
+| `Ctrl+Alt+Shift+Q` | 正常釋放（engine 還有回應時） |
+| `Ctrl+Alt+Shift+R` | **強制取回**：終止 engine、清掉游標裁切與 overlay，60 秒內不自動重連 |
+
+- 也可以從系統匣右鍵「強制取回滑鼠」或 UI 右上角紅色按鈕。
+- 熱鍵是全域的，游標被隱藏、螢幕被 overlay 蓋住時仍有效。
+- B 斷線或 B 的服務停止時，A 最多 10 秒會自動取回；若主迴圈卡死，
+  watchdog 會在 5 秒後直接結束 engine（游標一定回來）。
 - 緊急取回：`Ctrl+Alt+Shift+Q`。
 
 跨機剪貼簿
@@ -140,7 +152,7 @@ B 先開機 / IP 變更
 
 移除程式
 --------
-- 用 Windows「設定 → 應用程式 → 已安裝的應用程式」找到 **LAN-KVM 1.1.2.0** 按解除安裝，
+- 用 Windows「設定 → 應用程式 → 已安裝的應用程式」找到 **LAN-KVM 1.1.3.0** 按解除安裝，
   或執行開始功能表的「解除安裝 LAN-KVM」。
 - 解除安裝會自動：結束常駐程式、移除 SYSTEM 服務、刪除兩個開機排程、
   刪除防火牆規則、移除登入自動啟動。
@@ -173,5 +185,5 @@ B 先開機 / IP 變更
   2. 登入 B 後 `sc query LAN-KVM` 必須 RUNNING。
   3. `service.log` 要有 `identity announce`、`started session agent`；
      `session.log` 要有 `session agent started`、`winjector prestarted`。
-  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-1.1.2.exe`。
+  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-1.1.3.exe`。
 - 安裝失敗：看 %TEMP%\lankvm-setup.log。

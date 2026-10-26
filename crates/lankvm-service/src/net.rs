@@ -23,6 +23,8 @@ pub fn start_client(port: u16, stop: Arc<AtomicBool>, release_px: i32) -> Result
     let socket =
         UdpSocket::bind(("0.0.0.0", port)).with_context(|| format!("bind UDP port {port}"))?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    // A send to a dead master must not block the receive loop.
+    let _ = socket.set_write_timeout(Some(Duration::from_millis(100)));
     // Large buffers absorb input bursts and Wi-Fi stalls.
     let sock = socket2::SockRef::from(&socket);
     let _ = sock.set_recv_buffer_size(1 << 20);
@@ -97,6 +99,15 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
             virtual_x = 0;
             edge_hits = 0;
             log("session", "desktop changed -> edge accumulator reset");
+        }
+
+        // The master disappeared (killed, network gone). Release any keys we
+        // are holding so the desktop is not left with a stuck modifier.
+        if controlled && last_packet.elapsed() > Duration::from_secs(15) {
+            controlled = false;
+            edge_hits = 0;
+            submit(InjectEvent::Release);
+            log("session", "master silent 15 s; releasing injected keys");
         }
 
         // Do not auto-release on injection failure here: it makes the lock

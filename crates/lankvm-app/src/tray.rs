@@ -10,13 +10,16 @@ use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
     NOTIFYICONDATAW,
 };
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, PostMessageW, PostQuitMessage,
     RegisterClassW, SetForegroundWindow, SetTimer, TrackPopupMenu, TranslateMessage,
     IDI_APPLICATION, MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG, TPM_LEFTALIGN, TPM_RIGHTBUTTON,
-    TPM_TOPALIGN, WM_APP, WM_COMMAND, WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONUP, WM_NULL,
-    WM_RBUTTONUP, WM_TIMER, WNDCLASSW,
+    TPM_TOPALIGN, WM_APP, WM_COMMAND, WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY, WM_LBUTTONUP,
+    WM_NULL, WM_RBUTTONUP, WM_TIMER, WNDCLASSW,
 };
 
 use crate::state::{save, App};
@@ -27,7 +30,9 @@ const ID_SCAN: usize = 1002;
 const ID_CONNECT: usize = 1003;
 const ID_LOGS: usize = 1004;
 const ID_QUIT: usize = 1005;
+const ID_EMERGENCY: usize = 1006;
 const TRAY_UID: u32 = 1;
+const HOTKEY_ID: i32 = 0x4B01;
 
 static APP: OnceLock<Arc<App>> = OnceLock::new();
 
@@ -83,6 +88,15 @@ pub fn run(app: Arc<App>) -> ! {
             loop {
                 std::thread::sleep(Duration::from_secs(3600));
             }
+        }
+
+        // Global emergency hotkey. Registered by the app (not the engine) so it
+        // still works when the engine is wedged and the cursor is clipped.
+        let mods = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
+        if RegisterHotKey(hwnd, HOTKEY_ID, mods, b'R' as u32) == 0 {
+            app.log("tray: emergency hotkey Ctrl+Alt+Shift+R could not be registered");
+        } else {
+            app.log("tray: emergency hotkey Ctrl+Alt+Shift+R registered");
         }
 
         let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
@@ -175,6 +189,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lpar
             handle_command(hwnd, id);
             0
         }
+        WM_HOTKEY => {
+            if let Some(app) = APP.get() {
+                crate::engine::emergency_release(app, "hotkey");
+            }
+            0
+        }
         WM_TIMER => {
             if let Some(app) = APP.get() {
                 let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
@@ -188,6 +208,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lpar
             0
         }
         WM_DESTROY => {
+            let _ = UnregisterHotKey(hwnd, HOTKEY_ID);
             let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
             nid.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
             nid.hWnd = hwnd;
@@ -236,6 +257,13 @@ unsafe fn show_menu(hwnd: HWND) {
         wide(tr(app, "重新連線", "Reconnect"))
     };
     AppendMenuW(menu, MF_STRING, ID_CONNECT, connect_label.as_ptr());
+
+    let emergency = wide(tr(
+        app,
+        "強制取回滑鼠 (Ctrl+Alt+Shift+R)",
+        "Force release mouse (Ctrl+Alt+Shift+R)",
+    ));
+    AppendMenuW(menu, MF_STRING, ID_EMERGENCY, emergency.as_ptr());
 
     let logs = wide(tr(app, "收集紀錄", "Collect logs"));
     AppendMenuW(menu, MF_STRING, ID_LOGS, logs.as_ptr());
@@ -287,6 +315,7 @@ fn handle_command(hwnd: HWND, id: usize) {
                 app.log("tray: reconnect requested");
             }
         }
+        ID_EMERGENCY => crate::engine::emergency_release(app, "tray"),
         ID_LOGS => match crate::logs::collect(app) {
             Ok(path) => app.log(format!("tray: logs at {}", path.display())),
             Err(err) => app.log(format!("tray: log collection failed: {err:#}")),

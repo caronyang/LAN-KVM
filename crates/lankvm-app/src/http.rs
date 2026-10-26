@@ -282,8 +282,13 @@ fn route(app: &Arc<App>, url: &str, payload: &Value) -> Value {
             save(app.profile.as_deref(), &config);
             json!({"ok": true})
         }
+        "/api/emergency" => {
+            engine::emergency_release(app, "api");
+            json!({"ok": true})
+        }
         "/api/quit" => {
-            engine::stop_session(app, true);
+            // Do not leave a clipped cursor behind if we quit mid-session.
+            engine::emergency_release(app, "quit");
             app.log("quit requested");
             thread::spawn(|| {
                 thread::sleep(Duration::from_millis(300));

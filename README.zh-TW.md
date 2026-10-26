@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.2-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.3-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -11,7 +11,7 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 把游標推過螢幕邊界，另一台就接手——包含 **Windows 登入畫面與 UAC**。
 雙向剪貼簿（文字／圖片／檔案）與跨機檔案傳輸，控制期間原電腦的游標會消失。
 
-> **狀態：v1.1.2（延遲、跳回、鍵盤修正）。** 已在兩台 Windows 11 實機驗收
+> **狀態：v1.1.3（延遲、跳回、鍵盤、緊急取回）。** 已在兩台 Windows 11 實機驗收
 > （同一 Wi-Fi 的筆電＋桌機）：邊界切換、登入畫面操作、Num Lock、
 > 開機自動啟動、雙向剪貼簿（文字／截圖／檔案）。
 
@@ -46,7 +46,7 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 從 **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)** 下載最新安裝檔：
 
 ```
-LAN-KVM-Setup-1.1.2.exe
+LAN-KVM-Setup-1.1.3.exe
 ```
 
 執行（UAC 按「是」），選 English 或 繁體中文，然後：
@@ -62,8 +62,18 @@ LAN-KVM-Setup-1.1.2.exe
 IT 大量部署可用無聲安裝：
 
 ```powershell
-LAN-KVM-Setup-1.1.2.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.3.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
+
+## 卡住時（緊急取回）
+
+| 熱鍵 | 作用 |
+|---|---|
+| `Ctrl+Alt+Shift+Q` | 正常釋放（engine 還有回應時） |
+| `Ctrl+Alt+Shift+R` | **強制取回**：即使 engine 卡死也會結束它、清掉游標裁切/overlay，並在 60 秒內不自動重連 |
+
+同樣的功能也在：系統匣右鍵「強制取回滑鼠」、UI 右上角紅色按鈕、`POST /api/emergency`。
+熱鍵是全域的，游標被隱藏、螢幕被透明 overlay 蓋住時仍然有效。
 
 ## 運作方式
 
@@ -86,7 +96,7 @@ LAN-KVM-Setup-1.1.2.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.2.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.3.exe
 ```
 
 本機檢查：
