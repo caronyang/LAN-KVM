@@ -68,9 +68,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
             last_stats = Instant::now();
             log(
                 "session",
-                format!(
-                    "[net] rx={rx_packets} max_gap={max_gap_ms}ms controlled={controlled}"
-                ),
+                format!("[net] rx={rx_packets} max_gap={max_gap_ms}ms controlled={controlled}"),
             );
             rx_packets = 0;
             max_gap_ms = 0;
@@ -285,7 +283,10 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
     // that a healthy process and waits 30 s before restarting. Exit so it can
     // relaunch immediately instead.
     if !stop.load(Ordering::SeqCst) {
-        log("session", "UDP client ended unexpectedly; exiting session agent");
+        log(
+            "session",
+            "UDP client ended unexpectedly; exiting session agent",
+        );
         std::process::exit(1);
     }
 }

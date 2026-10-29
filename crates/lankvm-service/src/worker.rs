@@ -127,8 +127,7 @@ fn worker_main(desktop: &str, install_hooks: bool, ready: mpsc::Sender<Result<u3
     let (inject_tx, inject_rx) = mpsc::channel();
     let inject_desktop = desktop.to_string();
     let inject_handle = desktop_handle as isize;
-    let injector =
-        thread::spawn(move || injector_main(inject_rx, inject_desktop, inject_handle));
+    let injector = thread::spawn(move || injector_main(inject_rx, inject_desktop, inject_handle));
     inject::set_sender(inject_tx);
 
     let thread_id = unsafe { GetCurrentThreadId() };
@@ -233,13 +232,23 @@ fn injector_main(rx: Receiver<InjectEvent>, desktop: String, desktop_handle: isi
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed, &mut shift_down);
+                        apply(
+                            &desktop,
+                            InjectEvent::Motion { dx, dy },
+                            &mut pressed,
+                            &mut shift_down,
+                        );
                         release_keys(&mut pressed);
                         return;
                     }
                 }
             }
-            apply(&desktop, InjectEvent::Motion { dx, dy }, &mut pressed, &mut shift_down);
+            apply(
+                &desktop,
+                InjectEvent::Motion { dx, dy },
+                &mut pressed,
+                &mut shift_down,
+            );
             continue;
         }
 

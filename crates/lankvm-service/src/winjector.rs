@@ -69,8 +69,8 @@ fn process_connection(stream: &mut TcpStream) {
                 let entry_edge = b.clamp(1, 2);
                 if let Ok(bounds) = win::virtual_bounds() {
                     let ratio = a.clamp(0, 65_535) as f32 / 65_535.0;
-                    let y = bounds.top
-                        + (ratio * (bounds.height().max(2) - 1) as f32).round() as i32;
+                    let y =
+                        bounds.top + (ratio * (bounds.height().max(2) - 1) as f32).round() as i32;
                     let x = if entry_edge == 2 {
                         bounds.right - 1
                     } else {
@@ -156,9 +156,7 @@ fn release_keys(pressed: &mut HashSet<(u16, bool)>) {
 #[cfg(windows)]
 fn watch_parent(parent_pid: u32) {
     use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{
-        OpenProcess, WaitForSingleObject, INFINITE,
-    };
+    use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, INFINITE};
 
     const SYNCHRONIZE: u32 = 0x0010_0000;
 

@@ -99,16 +99,8 @@ fn supervisor(app: Arc<App>) {
     loop {
         let (role, peer) = {
             let config = app.config.lock().unwrap_or_else(|e| e.into_inner());
-            let master = config
-                .paired
-                .iter()
-                .find(|p| p.role == "master")
-                .cloned();
-            let client = config
-                .paired
-                .iter()
-                .find(|p| p.role == "client")
-                .cloned();
+            let master = config.paired.iter().find(|p| p.role == "master").cloned();
+            let client = config.paired.iter().find(|p| p.role == "client").cloned();
             match (master, client) {
                 (Some(peer), _) => ("master", Some(peer)),
                 (None, Some(peer)) => ("client", Some(peer)),
@@ -278,7 +270,10 @@ fn run_session(app: Arc<App>, mut stream: TcpStream, send_initial: bool) -> Resu
             if let Ok(frame) = build_frame(&app, &content) {
                 last_sent_fp = frame_fingerprint(&frame);
                 if write_frame(&mut stream, &postcard::to_allocvec(&frame)?).is_ok() {
-                    app.log(format!("clipboard sent (initial): {}", frame_summary(&frame)));
+                    app.log(format!(
+                        "clipboard sent (initial): {}",
+                        frame_summary(&frame)
+                    ));
                 }
             }
         }
@@ -409,11 +404,7 @@ fn current_clipboard() -> Option<ClipboardContent> {
 fn build_frame(app: &Arc<App>, content: &ClipboardContent) -> Result<Frame> {
     Ok(match content {
         ClipboardContent::Text(text) => Frame::Text(text.clone()),
-        ClipboardContent::Image {
-            width,
-            height,
-            png,
-        } => Frame::Image {
+        ClipboardContent::Image { width, height, png } => Frame::Image {
             width: *width,
             height: *height,
             png: png.clone(),
@@ -458,11 +449,7 @@ fn build_frame(app: &Arc<App>, content: &ClipboardContent) -> Result<Frame> {
     })
 }
 
-fn apply_frame(
-    app: &Arc<App>,
-    watcher: &Arc<Mutex<ClipboardWatcher>>,
-    bytes: &[u8],
-) -> Result<()> {
+fn apply_frame(app: &Arc<App>, watcher: &Arc<Mutex<ClipboardWatcher>>, bytes: &[u8]) -> Result<()> {
     let frame: Frame = postcard::from_bytes(bytes).context("decode clipboard frame")?;
     let summary = frame_summary(&frame);
     let fingerprint = frame_fingerprint(&frame);
@@ -474,11 +461,7 @@ fn apply_frame(
     let content = match &frame {
         Frame::Ping => return Ok(()),
         Frame::Text(text) => ClipboardContent::Text(text.clone()),
-        Frame::Image {
-            width,
-            height,
-            png,
-        } => ClipboardContent::Image {
+        Frame::Image { width, height, png } => ClipboardContent::Image {
             width: *width,
             height: *height,
             png: png.clone(),
@@ -545,11 +528,7 @@ fn frame_fingerprint(frame: &Frame) -> u64 {
             1u8.hash(&mut hasher);
             text.hash(&mut hasher);
         }
-        Frame::Image {
-            width,
-            height,
-            png,
-        } => {
+        Frame::Image { width, height, png } => {
             2u8.hash(&mut hasher);
             width.hash(&mut hasher);
             height.hash(&mut hasher);

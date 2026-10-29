@@ -37,20 +37,26 @@ fn main() {
             MB_OK | MB_ICONINFORMATION
         };
         unsafe {
-            MessageBoxW(
-                std::ptr::null_mut(),
-                body.as_ptr(),
-                title.as_ptr(),
-                flags,
-            );
+            MessageBoxW(std::ptr::null_mut(), body.as_ptr(), title.as_ptr(), flags);
         }
     }
 
     fn setup_log(line: &str) {
         use std::io::Write;
         let path = std::env::temp_dir().join("lankvm-setup.log");
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(f, "[{}] {line}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(
+                f,
+                "[{}] {line}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            );
         }
     }
 
@@ -89,7 +95,13 @@ fn main() {
     fn firewall_rule_protocol(name: &str, port: u16, protocol: &str) -> bool {
         let _ = run(
             "netsh",
-            &["advfirewall", "firewall", "delete", "rule", &format!("name={name}")],
+            &[
+                "advfirewall",
+                "firewall",
+                "delete",
+                "rule",
+                &format!("name={name}"),
+            ],
         );
         let port = port.to_string();
         run(
@@ -190,7 +202,8 @@ fn main() {
     let _ = run("taskkill.exe", &["/F", "/IM", "lankvm-service.exe", "/T"]);
     thread::sleep(Duration::from_millis(500));
 
-    let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
+    let program_files =
+        std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
     let install_dir = PathBuf::from(program_files).join("LAN-KVM");
     if let Err(err) = std::fs::create_dir_all(&install_dir) {
         message(&format!("無法建立安裝目錄：{err}"), true);
@@ -217,11 +230,17 @@ fn main() {
         Ok(_) => {
             setup_log(&format!("service bytes written: {}", SERVICE_BYTES.len()));
             let config_dir = PathBuf::from("C:\\ProgramData\\LAN-KVM");
-            let _ = std::fs::create_dir_all(&config_dir);
-            let _ = std::fs::write(
-                config_dir.join("config.txt"),
-                "client_port=45872\nrelease_px=10\n",
-            );
+            if let Err(err) = std::fs::create_dir_all(&config_dir) {
+                setup_log(&format!("config dir create failed: {err}"));
+            }
+            let config_path = config_dir.join("config.txt");
+            match std::fs::write(&config_path, "client_port=45872\nrelease_px=10\n") {
+                Ok(_) => setup_log(&format!("config written: {}", config_path.display())),
+                Err(err) => setup_log(&format!(
+                    "config write failed: {}: {err}",
+                    config_path.display()
+                )),
+            }
             // Wait for a previous service to be fully deleted.
             for _ in 0..80 {
                 let status = Command::new("sc.exe")

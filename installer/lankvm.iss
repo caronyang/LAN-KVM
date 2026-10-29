@@ -16,7 +16,7 @@
 ;   * HKCU Run entry for the tray app
 
 #define AppName "LAN-KVM"
-#define AppVersion "1.1.6"
+#define AppVersion "1.1.7"
 #define AppPublisher "LAN-KVM"
 #define SourceDir "..\target\release"
 
@@ -24,7 +24,7 @@
 AppId={{8B0F6E1C-4A2B-4C57-9A3B-7E5D2C1F9A10}
 AppName={#AppName}
 AppVersion={#AppVersion}
-VersionInfoVersion=1.1.6.0
+VersionInfoVersion=1.1.7.0
 VersionInfoDescription=LAN-KVM Setup
 AppPublisher={#AppPublisher}
 AppPublisherURL=https://github.com/caronyang/LAN-KVM
@@ -33,7 +33,7 @@ DefaultDirName={autopf}\LAN-KVM
 DefaultGroupName=LAN-KVM
 DisableProgramGroupPage=yes
 OutputDir=..\dist-app
-OutputBaseFilename=LAN-KVM-Setup-1.1.6
+OutputBaseFilename=LAN-KVM-Setup-1.1.7
 SetupIconFile=..\assets\branding\icons\lankvm.ico
 UninstallDisplayIcon={app}\lankvm-app.exe
 UninstallDisplayName={#AppName} {#AppVersion}
@@ -58,7 +58,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceDir}\lankvm-app.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\lankvm-service.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; The SYSTEM service needs client_port to run the P0 client engine.
-Source: "config.txt"; DestDir: "{commonappdata}\LAN-KVM"; Flags: onlyifdoesntexist uninsneveruninstall
+Source: "config.txt"; DestDir: "{commonappdata}\LAN-KVM"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\LAN-KVM"; Filename: "{app}\lankvm-app.exe"

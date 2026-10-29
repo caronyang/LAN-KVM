@@ -70,10 +70,8 @@ pub fn start(stop: Arc<AtomicBool>, data_port: u16) {
                     SocketAddr::from((Ipv4Addr::BROADCAST, DISCOVERY_PORT)),
                 );
                 for peer in &identity.peers {
-                    let _ = socket.send_to(
-                        message.as_bytes(),
-                        SocketAddr::new(*peer, DISCOVERY_PORT),
-                    );
+                    let _ =
+                        socket.send_to(message.as_bytes(), SocketAddr::new(*peer, DISCOVERY_PORT));
                 }
                 if logged_id != identity.id {
                     log(
@@ -136,12 +134,5 @@ fn read_candidate(path: &Path) -> Option<(SystemTime, Identity)> {
         .filter_map(|peer| peer.get("ip")?.as_str()?.parse().ok())
         .collect();
     let modified = fs::metadata(path).and_then(|meta| meta.modified()).ok()?;
-    Some((
-        modified,
-        Identity {
-            id,
-            name,
-            peers,
-        },
-    ))
+    Some((modified, Identity { id, name, peers }))
 }

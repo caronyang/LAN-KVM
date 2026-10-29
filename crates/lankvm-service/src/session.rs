@@ -25,7 +25,8 @@ use crate::desktop;
 use crate::identity;
 use crate::logger::{log, log_path};
 use crate::net;
-use crate::remote_inject;use crate::worker::{take_counts, DesktopWorker};
+use crate::remote_inject;
+use crate::worker::{take_counts, DesktopWorker};
 
 pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     let mut seconds = 0u64;
@@ -91,7 +92,11 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
         // 2 px was the old default and released on the slightest edge touch.
         // Treat it as "not configured" even when config.txt was not migrated.
         let configured = crate::config::load().release_px.unwrap_or(10);
-        let release_px = if configured <= 2 { 10 } else { configured.max(6) };
+        let release_px = if configured <= 2 {
+            10
+        } else {
+            configured.max(6)
+        };
         if let Err(err) = net::start_client(port, stop.clone(), release_px) {
             log("session", format!("UDP client failed: {err:#}"));
             // Exit so the service health check can restart a clean agent
@@ -130,7 +135,10 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
                         log("session", "winjector attached (idle until Winlogon)");
                     }
                     Err(err) => {
-                        log("session", format!("winjector prestart connect failed: {err:#}"));
+                        log(
+                            "session",
+                            format!("winjector prestart connect failed: {err:#}"),
+                        );
                     }
                 }
             }
@@ -212,8 +220,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
                                 }
                             }
                         }
-                        if !remote_inject::connected()
-                            && Instant::now() >= winjector_connect_retry
+                        if !remote_inject::connected() && Instant::now() >= winjector_connect_retry
                         {
                             match connect_winjector() {
                                 Ok(stream) => {
@@ -335,10 +342,7 @@ fn start_winjector() -> Result<Winjector> {
         )
     } == 0
     {
-        bail!(
-            "OpenProcessToken failed: {}",
-            io::Error::last_os_error()
-        );
+        bail!("OpenProcessToken failed: {}", io::Error::last_os_error());
     }
 
     let mut primary: HANDLE = null_mut();

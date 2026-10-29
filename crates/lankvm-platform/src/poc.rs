@@ -9,9 +9,7 @@ use std::io;
 use std::mem::{size_of, zeroed};
 use std::net::{SocketAddr, UdpSocket};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{
-    AtomicBool, AtomicI32, AtomicIsize, AtomicU32, AtomicU64, Ordering,
-};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -44,7 +42,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::windows as win;
 
-pub const DEFAULT_PORT: u16 = 45_871;const WM_LANKVM_RELEASE: u32 = WM_APP + 1;
+pub const DEFAULT_PORT: u16 = 45_871;
+const WM_LANKVM_RELEASE: u32 = WM_APP + 1;
 const WM_LANKVM_STOP: u32 = WM_APP + 2;
 
 fn epoch_secs() -> u64 {
@@ -204,8 +203,7 @@ pub fn run_master(
 
     let heartbeat_socket = socket.try_clone()?;
     let heartbeat_stop = stop.clone();
-    let heartbeat_thread =
-        thread::spawn(move || heartbeat_loop(heartbeat_socket, heartbeat_stop));
+    let heartbeat_thread = thread::spawn(move || heartbeat_loop(heartbeat_socket, heartbeat_stop));
 
     // Independent watchdog: only reads atomics and posts a message, so a stuck
     // network send can never keep the cursor clipped/hidden forever.
@@ -556,8 +554,7 @@ fn sender_loop(socket: UdpSocket, rx: Receiver<Event>, stop: Arc<AtomicBool>) {
                 p.a = scan as i32;
                 p.b = down as i32;
                 p.c = extended as i32;
-                p.flags = FLAG_SHIFT_VALID
-                    | if shift { FLAG_SHIFT_DOWN } else { 0 };
+                p.flags = FLAG_SHIFT_VALID | if shift { FLAG_SHIFT_DOWN } else { 0 };
                 p
             }
             Event::Wheel { delta, horizontal } => {
@@ -689,7 +686,11 @@ fn heartbeat_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
     let mut last_stats = Instant::now();
     while !stop.load(Ordering::SeqCst) {
         // 4 Hz while controlling (fast failure detection), 1 Hz when idle.
-        let interval_ms = if REMOTE.load(Ordering::SeqCst) { 250 } else { 1_000 };
+        let interval_ms = if REMOTE.load(Ordering::SeqCst) {
+            250
+        } else {
+            1_000
+        };
         let mut slept = 0u64;
         while slept < interval_ms {
             if stop.load(Ordering::SeqCst) {
@@ -853,7 +854,8 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
 }
 
 unsafe fn hotkey_modifiers_down() -> bool {
-    MODS_DOWN.load(Ordering::SeqCst) & (MOD_CTRL | MOD_ALT | MOD_SHIFT) == (MOD_CTRL | MOD_ALT | MOD_SHIFT)
+    MODS_DOWN.load(Ordering::SeqCst) & (MOD_CTRL | MOD_ALT | MOD_SHIFT)
+        == (MOD_CTRL | MOD_ALT | MOD_SHIFT)
 }
 
 fn create_raw_window() -> Result<HWND> {
@@ -1077,7 +1079,7 @@ fn do_switch(cursor: Point, bounds: Rect) {
 fn restore_cursor() {
     let hwnd = CURSOR_HIDER.swap(0, Ordering::SeqCst);
     if hwnd != 0 {
-        win::destroy_cursor_hider(hwnd as HWND);
+        unsafe { win::destroy_cursor_hider(hwnd as HWND) };
     }
     if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) {
         win::set_cursor_visible(true);
@@ -1099,10 +1101,7 @@ fn do_release(reason: &'static str) {
     // A detector that has fired stays fired until reset; without this the
     // second edge crossing (and every one after it) would be ignored.
     if let Some(detector) = EDGE.get() {
-        detector
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .reset();
+        detector.lock().unwrap_or_else(|e| e.into_inner()).reset();
     }
 
     if let (Some(bounds), Some(edge), Ok(cursor)) =

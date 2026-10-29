@@ -219,14 +219,22 @@ impl App {
     }
 
     pub fn snapshot(&self) -> Value {
-        let config = self.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let config = self
+            .config
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let peers = self.peers.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let pairing = self
             .pairing
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let session = self.session.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let session = self
+            .session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let logs = self.logs.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let suppressed = self
             .suppress_until

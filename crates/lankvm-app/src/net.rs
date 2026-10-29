@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::engine;
-use crate::state::{save, App, Pairing, PairedPeer, PeerInfo, Session};
+use crate::state::{save, App, PairedPeer, Pairing, PeerInfo, Session};
 
 pub const DISCOVERY_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 42, 99);
 static LAST_PAIR_OPEN: AtomicU64 = AtomicU64::new(0);
@@ -237,7 +237,11 @@ fn start_service_watch(app: Arc<App>) {
                 app.service_ok.store(running, Ordering::Relaxed);
                 app.log(format!(
                     "client engine {}",
-                    if running { "ready (SYSTEM service)" } else { "not ready" }
+                    if running {
+                        "ready (SYSTEM service)"
+                    } else {
+                        "not ready"
+                    }
                 ));
                 if running {
                     // A restarted client engine means the master's remote state is
@@ -249,11 +253,7 @@ fn start_service_watch(app: Arc<App>) {
                         .unwrap_or_else(|e| e.into_inner())
                         .is_some();
                     if has_session {
-                        let config = app
-                            .config
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .clone();
+                        let config = app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         if let Some(peer) = config.paired.iter().find(|p| p.role == "client") {
                             let msg = base(&app, "session_reset");
                             send_to(&app, &msg, parse_or(&peer.ip), peer.control_port);
@@ -395,7 +395,13 @@ fn handle_discovery(app: &Arc<App>, value: &Value, src: IpAddr) {
         return;
     }
     app.peer_upsert(info);
-    update_paired_address(app, &id, src, p(value, "control_port"), p(value, "data_port"));
+    update_paired_address(
+        app,
+        &id,
+        src,
+        p(value, "control_port"),
+        p(value, "data_port"),
+    );
 
     if s(value, "type") == "discover" {
         let reply = base(app, "peer");
@@ -716,11 +722,7 @@ fn handle_pair_ok(app: &Arc<App>, value: &Value, src: IpAddr) {
 
 fn handle_session_start(app: &Arc<App>, value: &Value) {
     let id = s(value, "id");
-    let config = app
-        .config
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
+    let config = app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some(paired) = config.peer(&id) else {
         app.log(format!("session_start from unpaired {id} ignored"));
         return;
@@ -770,12 +772,7 @@ pub fn send_session_start(app: &Arc<App>, peer: &PairedPeer, edge: &str) {
     send_to(app, &msg, parse_or(&peer.ip), peer.control_port);
 }
 
-pub fn send_logs_request(
-    app: &Arc<App>,
-    peer: &PairedPeer,
-    token: &str,
-    upload_port: u16,
-) {
+pub fn send_logs_request(app: &Arc<App>, peer: &PairedPeer, token: &str, upload_port: u16) {
     let mut msg = base(app, "logs_request");
     if let Value::Object(map) = &mut msg {
         map.insert("token".to_string(), json!(token));
@@ -784,7 +781,8 @@ pub fn send_logs_request(
     send_to(app, &msg, parse_or(&peer.ip), peer.control_port);
 }
 
-pub fn send_session_stop(app: &Arc<App>, peer_ip: &str, peer_id: &str) {    let config = app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
+pub fn send_session_stop(app: &Arc<App>, peer_ip: &str, peer_id: &str) {
+    let config = app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let port = config
         .peer(peer_id)
         .map(|p| p.control_port)
@@ -804,7 +802,6 @@ fn start_supervisor(app: Arc<App>) {
             // log will look stale on resume; skip one round.
             let suspended = last_tick.elapsed() > Duration::from_secs(6);
             last_tick = Instant::now();
-
 
             // Pairing codes expire; otherwise the host UI would stay modal.
             let expired = {
@@ -877,11 +874,8 @@ fn start_supervisor(app: Arc<App>) {
                     last_keepalive = Instant::now();
                     if let Some(session) = snapshot {
                         if session.role == "master" {
-                            let config = app
-                                .config
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .clone();
+                            let config =
+                                app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
                             if let Some(peer) = config.peer(&session.peer_id) {
                                 send_session_start(&app, peer, &config.edge);
                             }
@@ -909,11 +903,7 @@ fn start_supervisor(app: Arc<App>) {
                 continue;
             }
 
-            let config = app
-                .config
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
+            let config = app.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
             if config.paused {
                 continue;
             }

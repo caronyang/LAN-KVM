@@ -1,3 +1,5 @@
+> **Update:** 1.1.7 fixes the data-port 45872 listener issue (legacy `client_port=45871` / installer config was not overwritten on upgrade). See [release-notes-v1.1.7.md](release-notes-v1.1.7.md).
+
 # 延遲與「跳回」修正（v1.1）
 
 > 日期：2026-10-26

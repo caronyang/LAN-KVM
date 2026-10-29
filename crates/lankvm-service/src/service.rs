@@ -227,26 +227,20 @@ fn probe_client(port: u16) -> bool {
     let _ = socket.set_read_timeout(Some(Duration::from_millis(500)));
     let mut ping = Packet::new(PacketKind::Ping, 0);
     ping.a = 0;
-    if socket
-        .send_to(&ping.encode(), ("127.0.0.1", port))
-        .is_err()
-    {
+    if socket.send_to(&ping.encode(), ("127.0.0.1", port)).is_err() {
         return false;
     }
     let mut buffer = [0u8; 64];
     // A busy agent can miss a single probe. Retry once within the same check
     // before counting a failure.
     for _ in 0..2 {
-        match socket.recv_from(&mut buffer) {
-            Ok((n, _)) => {
-                if Packet::decode(&buffer[..n])
-                    .map(|packet| packet.kind == PacketKind::Pong && packet.d == 1)
-                    .unwrap_or(false)
-                {
-                    return true;
-                }
+        if let Ok((n, _)) = socket.recv_from(&mut buffer) {
+            if Packet::decode(&buffer[..n])
+                .map(|packet| packet.kind == PacketKind::Pong && packet.d == 1)
+                .unwrap_or(false)
+            {
+                return true;
             }
-            Err(_) => {}
         }
     }
     false
@@ -287,7 +281,9 @@ pub fn install() -> Result<()> {
         );
         let status = service.query_status().context("query existing service")?;
         if status.current_state != ServiceState::Running {
-            service.start::<&OsStr>(&[]).context("start existing service")?;
+            service
+                .start::<&OsStr>(&[])
+                .context("start existing service")?;
         }
         println!(
             "Updated {SERVICE_NAME} to AutoStart and ensured it is running (was {:?}).",

@@ -189,9 +189,7 @@ fn run_poc(mut args: impl Iterator<Item = String>) -> Result<()> {
     match role.as_deref() {
         Some("master") => {
             let peer = peer.ok_or_else(|| anyhow!("master requires --peer <client-ip>"))?;
-            lankvm_platform::poc::run_master(
-                &peer, port, edge, seconds, trigger_px, trigger_ms,
-            )
+            lankvm_platform::poc::run_master(&peer, port, edge, seconds, trigger_px, trigger_ms)
         }
         Some("client") => lankvm_platform::poc::run_client(port, seconds, release_px),
         _ => Err(anyhow!("--role must be master or client")),

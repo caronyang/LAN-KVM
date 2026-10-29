@@ -1,4 +1,4 @@
-﻿#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod clipboard_sync;
 mod engine;
@@ -36,7 +36,10 @@ fn main() {
         match arg.as_str() {
             "--silent" => silent = true,
             "--http-port" => {
-                http_port = iter.next().and_then(|v| v.parse().ok()).unwrap_or(http_port)
+                http_port = iter
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(http_port)
             }
             "--control-port" => {
                 control_port = iter
@@ -45,7 +48,10 @@ fn main() {
                     .unwrap_or(control_port)
             }
             "--data-port" => {
-                data_port = iter.next().and_then(|v| v.parse().ok()).unwrap_or(data_port)
+                data_port = iter
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(data_port)
             }
             "--discovery-port" => {
                 discovery_port = iter

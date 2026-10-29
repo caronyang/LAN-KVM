@@ -18,11 +18,7 @@ pub fn log(component: &str, message: impl AsRef<str>) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let line = format!(
-        "[{stamp}] [{}] {}\n",
-        std::process::id(),
-        message.as_ref()
-    );
+    let line = format!("[{stamp}] [{}] {}\n", std::process::id(), message.as_ref());
     let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
         let _ = file.write_all(line.as_bytes());

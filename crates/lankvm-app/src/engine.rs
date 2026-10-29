@@ -25,14 +25,17 @@ fn stop_file_path() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!(
-        "lankvm-stop-{}-{}.flag",
-        std::process::id(),
-        nanos
-    ))
+    std::env::temp_dir().join(format!("lankvm-stop-{}-{}.flag", std::process::id(), nanos))
 }
 
-fn spawn(app: &Arc<App>, mut args: Vec<String>, role: &str, peer_id: &str, peer_ip: &str, data_port: u16) -> Result<()> {
+fn spawn(
+    app: &Arc<App>,
+    mut args: Vec<String>,
+    role: &str,
+    peer_id: &str,
+    peer_ip: &str,
+    data_port: u16,
+) -> Result<()> {
     let stop_file = stop_file_path();
     let _ = fs::remove_file(&stop_file);
     args.push("--stop-file".to_string());
@@ -42,7 +45,10 @@ fn spawn(app: &Arc<App>, mut args: Vec<String>, role: &str, peer_id: &str, peer_
 
     let log_path = engine_log_path();
     // Keep older engine runs: overwriting lost the log of the run that hung.
-    if fs::metadata(&log_path).map(|m| m.len() > 8 * 1024 * 1024).unwrap_or(false) {
+    if fs::metadata(&log_path)
+        .map(|m| m.len() > 8 * 1024 * 1024)
+        .unwrap_or(false)
+    {
         let _ = fs::remove_file(&log_path);
     }
     let mut log = fs::OpenOptions::new()
@@ -56,7 +62,6 @@ fn spawn(app: &Arc<App>, mut args: Vec<String>, role: &str, peer_id: &str, peer_
         crate::state::now_hms()
     );
     let log2 = log.try_clone().context("clone engine.log")?;
-
 
     let exe = std::env::current_exe().context("current_exe")?;
     let mut command = Command::new(exe);
@@ -196,7 +201,11 @@ pub fn emergency_release(app: &Arc<App>, reason: &str) {
         .is_some();
     app.log(format!(
         "EMERGENCY release ({reason}){}",
-        if had_session { "" } else { " - no active session" }
+        if had_session {
+            ""
+        } else {
+            " - no active session"
+        }
     ));
     if !had_session {
         return;
@@ -262,9 +271,24 @@ pub fn run_engine(args: impl Iterator<Item = String>) -> ! {
                     _ => lankvm_core::Edge::Right,
                 }
             }
-            "--trigger-px" => trigger_px = args.next().and_then(|v| v.parse().ok()).unwrap_or(trigger_px),
-            "--trigger-ms" => trigger_ms = args.next().and_then(|v| v.parse().ok()).unwrap_or(trigger_ms),
-            "--release-px" => release_px = args.next().and_then(|v| v.parse().ok()).unwrap_or(release_px),
+            "--trigger-px" => {
+                trigger_px = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(trigger_px)
+            }
+            "--trigger-ms" => {
+                trigger_ms = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(trigger_ms)
+            }
+            "--release-px" => {
+                release_px = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(release_px)
+            }
             "--stop-file" => stop_file = args.next().map(PathBuf::from),
             "--parent-pid" => parent_pid = args.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             _ => {}

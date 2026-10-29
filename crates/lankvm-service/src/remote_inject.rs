@@ -39,18 +39,11 @@ pub fn clear() {
 }
 
 pub fn is_active() -> bool {
-    ENABLED.load(Ordering::SeqCst)
-        && STREAM
-            .lock()
-            .map(|slot| slot.is_some())
-            .unwrap_or(false)
+    ENABLED.load(Ordering::SeqCst) && STREAM.lock().map(|slot| slot.is_some()).unwrap_or(false)
 }
 
 pub fn connected() -> bool {
-    STREAM
-        .lock()
-        .map(|slot| slot.is_some())
-        .unwrap_or(false)
+    STREAM.lock().map(|slot| slot.is_some()).unwrap_or(false)
 }
 
 pub fn send(event: &InjectEvent) -> bool {

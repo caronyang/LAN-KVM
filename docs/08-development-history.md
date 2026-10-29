@@ -398,3 +398,28 @@ Get-Content C:\ProgramData\LAN-KVM\logs\session.log -Tail 30
 目前已經把「**Windows 服務 + SYSTEM session agent + Winlogon 桌面 + 滑鼠/鍵盤注入**」這條最難的技術路徑打通，並且完成剪貼簿/檔案的本機引擎。唯一還沒打通的是 **A→B 的 UDP 網路路徑**，而 Windows 防火牆已排除，最可能是 Apex One/EDR 或 VM 網路政策。
 
 明天在乾淨 VM 上，先確認 `client online`，再確認 `Winlogon: injector active`，就能完成跨機登入畫面控制。之後才進入 QUIC/TLS、配對、跨機剪貼簿/檔案、UI。
+
+---
+
+## 16. 2026-10-29：1.1.7 data-port 修正
+
+公司環境升級 1.1.6 後出現「client 引擎（SYSTEM 服務）未就緒」，配對與剪貼簿正常，但滑鼠無法穿越。追查結果：
+
+- app 的健康檢查是 Ping `127.0.0.1:45872`，等 `Pong d=1`
+- service 只有在讀到 `client_port` 時才會帶 `--client --port` 啟動 session agent
+- 1.1.6 的 `Config::default()` 是 `client_port: None`
+- 舊 `C:\ProgramData\LAN-KVM\config.txt` 是 `client_port=45871`（app 的 control port，不是 data port）
+- Inno Setup 的 config 使用 `onlyifdoesntexist`，升級時不會覆寫舊 config
+
+因此 service 要嘛完全沒有 45872 listener，要嘛去搶 app 的 45871；app 永遠認為 service 不在，`session_start` 被忽略。
+
+1.1.7 修正：
+
+- `Config::default()` 改成 `client_port=45872`
+- config 缺失/無效 → 45872
+- 舊值 45871 → 自動遷移成 45872
+- Inno installer 的 config 改成升級時覆寫
+- 自解壓 setup 記錄 config 寫入成功/失敗
+- 修正 clippy raw pointer 警告
+
+驗證方式：`Get-NetUDPEndpoint -LocalPort 45872` 必須由 `lankvm-service` 持有，45871 由 `lankvm-app` 持有。詳細 release notes 見 `docs/release-notes-v1.1.7.md`。

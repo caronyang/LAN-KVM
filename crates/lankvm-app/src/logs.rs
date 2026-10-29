@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -66,8 +66,8 @@ pub fn send_bundle(app: &Arc<App>, host: &str, port: u16, token: &str) -> Result
     let body = pack_dir(&dir)?;
     let _ = fs::remove_dir_all(&dir);
 
-    let mut stream = TcpStream::connect((host, port))
-        .with_context(|| format!("connect {host}:{port}"))?;
+    let mut stream =
+        TcpStream::connect((host, port)).with_context(|| format!("connect {host}:{port}"))?;
     stream.set_write_timeout(Some(Duration::from_secs(15)))?;
     let header = format!(
         "POST /upload HTTP/1.1\r\nHost: {host}:{port}\r\nX-Lankvm-Token: {token}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -81,7 +81,7 @@ pub fn send_bundle(app: &Arc<App>, host: &str, port: u16, token: &str) -> Result
     Ok(())
 }
 
-fn fetch_peer(app: &Arc<App>, dir: &PathBuf, peer: &PairedPeer) -> Result<bool> {
+fn fetch_peer(app: &Arc<App>, dir: &Path, peer: &PairedPeer) -> Result<bool> {
     let listener = TcpListener::bind(("0.0.0.0", LOG_PORT))
         .with_context(|| format!("bind log port {LOG_PORT}"))?;
     listener.set_nonblocking(true)?;
@@ -203,7 +203,7 @@ fn pack_dir(dir: &PathBuf) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-fn unpack_bundle(mut data: &[u8], dir: &PathBuf) -> Result<()> {
+fn unpack_bundle(mut data: &[u8], dir: &Path) -> Result<()> {
     if !data.starts_with(MAGIC) {
         bail!("bad bundle magic");
     }
