@@ -9,6 +9,12 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use lankvm_platform::logfile::{maybe_rotate, Rotation};
+
+/// 2 MB per file with three generations: the tray app is event-driven, so this
+/// only ever fills up with years of reconnects and probe failures.
+const APP_LOG_ROTATION: Rotation = Rotation::new(2 * 1024 * 1024, 3);
+
 fn default_true() -> bool {
     true
 }
@@ -189,12 +195,17 @@ impl App {
         {
             static WRITE_LOCK: Mutex<()> = Mutex::new(());
             let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            if let Ok(mut file) = fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(config_dir().join("app.log"))
-            {
-                let _ = file.write_all(format!("{line}\n").as_bytes());
+            let path = config_dir().join("app.log");
+            let written = match fs::OpenOptions::new().create(true).append(true).open(&path) {
+                Ok(mut file) => match file.write_all(format!("{line}\n").as_bytes()) {
+                    Ok(()) => line.len() as u64 + 1,
+                    Err(_) => 0,
+                },
+                Err(_) => 0,
+            };
+            // Drop the handle before rotating: Windows cannot rename an open file.
+            if written > 0 {
+                maybe_rotate(&path, APP_LOG_ROTATION, written);
             }
         }
         let mut logs = self.logs.lock().unwrap_or_else(|e| e.into_inner());
@@ -203,6 +214,12 @@ impl App {
             let drain = logs.len() - 300;
             logs.drain(0..drain);
         }
+    }
+
+    /// Drop the in-memory log buffer shown by the UI (on-disk files are
+    /// removed by [`crate::logs::clear`]).
+    pub fn clear_log_buffer(&self) {
+        self.logs.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     pub fn peer_upsert(&self, info: PeerInfo) {

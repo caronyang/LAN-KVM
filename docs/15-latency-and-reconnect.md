@@ -305,7 +305,7 @@ heartbeat 執行緒因此停止 → **timeout 永遠不會觸發**。
 | 托盤 / UI | 托盤選單「強制取回滑鼠」；UI 右上角紅色「強制取回滑鼠」按鈕；`POST /api/emergency` |
 | 結束程式 | `/api/quit` 與托盤結束前都會先做一次 emergency release |
 | client | 15 秒沒收到 master 任何封包時，**放掉已按下的按鍵**（避免 Ctrl/Shift 卡住），並停止注入 |
-| 診斷 | `engine.log` 改為**附加**（每次啟動寫一行 `===== engine ... start =====`），超過 8 MB 才清空 |
+| 診斷 | `engine.log` 改為**附加**（每次啟動寫一行 `===== engine ... start =====`）；1.1.8 起超過 8 MB 會輪替成 `engine.log.1`，保留上一次執行的紀錄 |
 
 熱鍵：
 

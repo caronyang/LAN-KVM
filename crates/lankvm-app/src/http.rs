@@ -55,13 +55,25 @@ pub fn serve(app: Arc<App>, port: u16) -> Result<()> {
 
 fn state_json(app: &Arc<App>) -> Value {
     let mut value = app.snapshot();
-    let engine_log = std::fs::read_to_string(engine::engine_log_path()).unwrap_or_default();
+    // Only the tail is needed for the UI; reading a whole (now rotated) file on
+    // every one-second poll wasted memory and disk I/O.
+    let engine_log = engine::engine_log_tail(64 * 1024);
     let tail: Vec<&str> = engine_log.lines().rev().take(25).collect();
+
+    let files = crate::logs::log_files();
+    let total: u64 = files.iter().map(|(_, bytes)| *bytes).sum();
+    let files: Vec<Value> = files
+        .into_iter()
+        .map(|(name, bytes)| json!({"name": name, "bytes": bytes}))
+        .collect();
+
     if let Value::Object(map) = &mut value {
         map.insert(
             "engine_log".to_string(),
             json!(tail.into_iter().map(|s| s.to_string()).collect::<Vec<_>>()),
         );
+        map.insert("log_files".to_string(), json!(files));
+        map.insert("log_total_bytes".to_string(), json!(total));
     }
     value
 }
@@ -239,6 +251,19 @@ fn route(app: &Arc<App>, url: &str, payload: &Value) -> Value {
             Ok(path) => json!({"ok": true, "path": path.display().to_string()}),
             Err(err) => json!({"ok": false, "error": format!("{err:#}")}),
         },
+        "/api/logs/clear" => {
+            let result = crate::logs::clear(app);
+            app.clear_log_buffer();
+            if result["ok"].as_bool().unwrap_or(false) {
+                app.log("logs cleared");
+            } else {
+                app.log(format!(
+                    "log clear failed: {}",
+                    result["error"].as_str().unwrap_or("unknown")
+                ));
+            }
+            result
+        }
         "/api/autoconnect" => {
             let peer_id = payload
                 .get("peer_id")

@@ -6,6 +6,8 @@
 
 use lankvm_core::{MonitorInfo, Point, Rect};
 
+pub mod logfile;
+
 #[cfg(windows)]
 pub mod windows;
 

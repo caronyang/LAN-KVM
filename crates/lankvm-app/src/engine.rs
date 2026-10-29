@@ -9,6 +9,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 
+use lankvm_platform::logfile::Rotation;
+
 use crate::state::{config_dir, App, Session};
 
 #[cfg(windows)]
@@ -16,8 +18,18 @@ use std::os::windows::process::CommandExt;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// 8 MB for the live run plus one previous run (`engine.log.1`). A single
+/// session normally logs only a few hundred KB, so this covers a wedged run.
+const ENGINE_LOG_ROTATION: Rotation = Rotation::new(8 * 1024 * 1024, 1);
+
 pub fn engine_log_path() -> PathBuf {
     config_dir().join("engine.log")
+}
+
+/// Last `max_bytes` of engine.log, used by the UI instead of reading the whole
+/// file on every state poll.
+pub fn engine_log_tail(max_bytes: u64) -> String {
+    lankvm_platform::logfile::tail_text(&engine_log_path(), max_bytes).unwrap_or_default()
 }
 
 fn stop_file_path() -> PathBuf {
@@ -44,12 +56,14 @@ fn spawn(
     args.push(std::process::id().to_string());
 
     let log_path = engine_log_path();
-    // Keep older engine runs: overwriting lost the log of the run that hung.
+    // Keep the previous run: it is usually the one that hung. The engine writes
+    // straight to this file (no pipe), so it cannot be rotated mid-session
+    // without stalling input; the cap is enforced at every start instead.
     if fs::metadata(&log_path)
-        .map(|m| m.len() > 8 * 1024 * 1024)
+        .map(|m| m.len() > ENGINE_LOG_ROTATION.max_bytes)
         .unwrap_or(false)
     {
-        let _ = fs::remove_file(&log_path);
+        let _ = lankvm_platform::logfile::rotate(&log_path, ENGINE_LOG_ROTATION.keep);
     }
     let mut log = fs::OpenOptions::new()
         .create(true)

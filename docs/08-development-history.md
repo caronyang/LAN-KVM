@@ -423,3 +423,28 @@ Get-Content C:\ProgramData\LAN-KVM\logs\session.log -Tail 30
 - 修正 clippy raw pointer 警告
 
 驗證方式：`Get-NetUDPEndpoint -LocalPort 45872` 必須由 `lankvm-service` 持有，45871 由 `lankvm-app` 持有。詳細 release notes 見 `docs/release-notes-v1.1.7.md`。
+
+---
+
+## 17. 2026-10-29：1.1.8 紀錄輪替
+
+使用者問「連線的 log 會無限長大嗎」。實際量測：`session.log` 8 天累積 250 KB（43 次 agent 重啟），
+閒置 24/7 約 1.6 MB/天，受控中約 4 MB/天。成長慢，但沒有上限，而且 `/api/logs` 會把整個檔案
+讀進記憶體再整包送出，log 大時收集會變慢甚至 timeout。
+
+1.1.8 修正：
+
+- 新增 `lankvm-platform::logfile`：每寫 1 MiB 檢查一次大小，超過上限就 rename 成 `.1`，
+  舊世代往下移。多 process 同時寫入時 rename 失敗會在下一次重試。
+- `session.log`／`service.log` 5 MB × 3 代；`app.log` 2 MB × 3 代；`engine.log` 8 MB × 1 代。
+- `engine.log` 在每次 engine 啟動時輪替（engine 直接寫檔，不走 pipe，避免 log I/O 影響輸入延遲）。
+- 收集紀錄：每檔只帶最後 2 MB、打包與接收都改為串流、整包上限 64 MB。
+- UI 顯示紀錄檔大小與合計，新增「清除紀錄」（`POST /api/logs/clear`）。
+- `/api/state` 的 `engine_log` 改為只讀最後 64 KB。
+
+實測（本機）：`/api/state` 回報 340 KB；`/api/logs/clear` 成功刪除 `app.log`、`service.log`、
+`session.log`，服務數秒內重建檔案。
+
+注意：`C:\ProgramData\LAN-KVM\logs` 的檔案由 SYSTEM 建立，部分機器上一般使用者只能刪除、
+不能覆寫；如果清除失敗，UI 會顯示 Windows 的錯誤訊息，需要以系統管理員身分處理。
+詳細說明見 `docs/16-log-retention.md`。

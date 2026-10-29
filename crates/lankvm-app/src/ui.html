@@ -162,7 +162,12 @@
     </div>
 
     <div class="card">
-      <h2 data-i18n="logs">紀錄</h2>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <h2 style="margin:0" data-i18n="logs">紀錄</h2>
+        <span style="flex:1"></span>
+        <button class="small" onclick="clearLogs()" data-i18n="clearLogs">清除紀錄</button>
+      </div>
+      <p class="muted" id="logSizes" style="font-size:12px;margin:0 0 8px"></p>
       <pre class="logs" id="logs">-</pre>
     </div>
   </section>
@@ -179,6 +184,13 @@ const I18N = {
     loading: "載入中…",
     rescan: "重新掃描",
     collectLogs: "收集紀錄",
+    clearLogs: "清除紀錄",
+    clearLogsConfirm: "刪除本機與服務的紀錄檔？已經收集到桌面或交給開發者的副本不受影響。",
+    clearLogsDone: "已清除 {n} 個紀錄檔",
+    clearLogsBusy: "（連線中，engine.log 保留）",
+    clearLogsFailed: "清除紀錄失敗：{error}",
+    logFiles: "紀錄檔：{list}（合計 {total}）",
+    logFilesNone: "目前沒有紀錄檔",
     quit: "結束程式",
     local: "本機",
     name: "名稱",
@@ -266,6 +278,13 @@ const I18N = {
     loading: "Loading…",
     rescan: "Rescan",
     collectLogs: "Collect logs",
+    clearLogs: "Clear logs",
+    clearLogsConfirm: "Delete the local and service log files? Bundles you already collected are not affected.",
+    clearLogsDone: "Cleared {n} log file(s)",
+    clearLogsBusy: "(engine.log kept while a session is running)",
+    clearLogsFailed: "Could not clear logs: {error}",
+    logFiles: "Log files: {list} (total {total})",
+    logFilesNone: "No log files yet",
     quit: "Quit",
     local: "This computer",
     name: "Name",
@@ -408,6 +427,12 @@ function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function toast(msg) {
   const tEl = document.getElementById("toast");
   tEl.textContent = msg;
@@ -456,6 +481,18 @@ function render() {
   renderPairing(s);
   document.getElementById("logs").textContent =
     [...(s.logs || []), t("engineMarker"), ...(s.engine_log || [])].join("\n");
+  renderLogFiles(s);
+}
+
+function renderLogFiles(s) {
+  const files = s.log_files || [];
+  const total = s.log_total_bytes || files.reduce((sum, f) => sum + (f.bytes || 0), 0);
+  document.getElementById("logSizes").textContent = files.length
+    ? t("logFiles", {
+        list: files.map(f => `${f.name} ${fmtBytes(f.bytes || 0)}`).join(" · "),
+        total: fmtBytes(total)
+      })
+    : t("logFilesNone");
 }
 
 function renderPeers(s) {
@@ -627,6 +664,18 @@ async function collectLogs() {
   const r = await api("/api/logs", {});
   if (r.ok) toast(t("collected") + r.path);
   else toast(r.error || t("collectFailed"));
+}
+async function clearLogs() {
+  if (!confirm(t("clearLogsConfirm"))) return;
+  const r = await api("/api/logs/clear", {});
+  if (r.ok) {
+    let msg = t("clearLogsDone", { n: (r.cleared || []).length });
+    if ((r.skipped || []).length) msg += " " + t("clearLogsBusy");
+    toast(msg);
+  } else {
+    toast(t("clearLogsFailed", { error: r.error || "" }));
+  }
+  refresh();
 }
 
 applyI18n();
