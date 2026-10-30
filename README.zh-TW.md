@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.8-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.9-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -11,13 +11,16 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 把游標推過螢幕邊界，另一台就接手——包含 **Windows 登入畫面與 UAC**。
 雙向剪貼簿（文字／圖片／檔案）與跨機檔案傳輸，控制期間原電腦的游標會消失。
 
-> **狀態：v1.1.8（紀錄輪替、串流打包、清除紀錄按鈕，立於 1.1.7 之上）。** 已在兩台 Windows 11
-> 實機驗收（同一 Wi-Fi 的筆電＋桌機）：邊界切換、登入畫面操作、Num Lock、
+> **狀態：v1.1.9（修正開機時 service 崩潰，立於 1.1.8 之上）。** 已在兩台 Windows 11
+> 實機（同一個有線區域網路）驗收：邊界切換、登入畫面操作、Num Lock、
 > 開機自動啟動、雙向剪貼簿（文字／截圖／檔案）。
 >
-> v1.1.8 為每個紀錄檔加上上限：`session.log`／`service.log` 5 MB × 3 代、`app.log` 2 MB × 3 代、
-> `engine.log` 8 MB × 2 代（保留上一次執行）。收集紀錄時每個檔只帶最後 2 MB、改為串流傳輸，
-> UI 也會顯示目前大小並提供「清除紀錄」。
+> v1.1.9 修正開機時的崩潰：service 原本用 `Instant::now() - 30 秒` 安排第一次啟動 session
+> agent，但開機未滿 30 秒時這個相減會 overflow → panic，導致每次開機都要等約 30 秒、SCM
+> 重啟兩次後 client engine 才起來。現在改用 `Option<Instant>`，開機後立即啟動。
+>
+> v1.1.8 為每個紀錄檔加上上限（session/service 5 MB × 3、app 2 MB × 3、engine 8 MB × 1）、
+> 收集時每檔只帶最後 2 MB 並改為串流，UI 也會顯示目前大小並提供「清除紀錄」。
 
 ---
 
@@ -51,7 +54,7 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 從 **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)** 下載最新安裝檔：
 
 ```
-LAN-KVM-Setup-1.1.8.exe
+LAN-KVM-Setup-1.1.9.exe
 ```
 
 執行（UAC 按「是」），選 English 或 繁體中文，然後：
@@ -67,7 +70,7 @@ LAN-KVM-Setup-1.1.8.exe
 IT 大量部署可用無聲安裝：
 
 ```powershell
-LAN-KVM-Setup-1.1.8.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.9.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## 卡住時（緊急取回）
@@ -101,7 +104,7 @@ LAN-KVM-Setup-1.1.8.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.8.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.9.exe
 ```
 
 本機檢查：
@@ -125,6 +128,7 @@ cargo build -p lankvm-devtools
 - [延遲與「跳回」修正（v1.1.1–1.1.7）](docs/15-latency-and-reconnect.md)
 - [Release notes v1.1.7](docs/release-notes-v1.1.7.md)
 - [Release notes v1.1.8](docs/release-notes-v1.1.8.md)
+- [Release notes v1.1.9](docs/release-notes-v1.1.9.md)
 - [紀錄輪替與打包](docs/16-log-retention.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 

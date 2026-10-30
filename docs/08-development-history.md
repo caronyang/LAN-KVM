@@ -448,3 +448,29 @@ Get-Content C:\ProgramData\LAN-KVM\logs\session.log -Tail 30
 注意：`C:\ProgramData\LAN-KVM\logs` 的檔案由 SYSTEM 建立，部分機器上一般使用者只能刪除、
 不能覆寫；如果清除失敗，UI 會顯示 Windows 的錯誤訊息，需要以系統管理員身分處理。
 詳細說明見 `docs/16-log-retention.md`。
+---
+
+## 18. 2026-10-30：1.1.9 開機 panic
+
+使用者回報「這一版滑鼠感覺有極微小卡頓」，收集紀錄後發現兩件事：
+
+1. 1.1.8 的 log 輪替在該機器上一次都沒執行（沒有任何 `.1` 檔；`app.log` 28 KB、
+   `session.log` 1.6 MB、peer `engine.log` 3.5 MB，都遠低於上限），且 log 呼叫不在
+   每個滑鼠事件上，因此判定卡頓不是 log 機制造成。
+2. 真正找到的 bug：每次開機 service 會 panic 兩次，約 30 秒後才穩定。
+
+根因：`service.rs` 用 `Instant::now() - Duration::from_secs(30)` 讓第一次啟動嘗試立即發生。
+Windows 的 `Instant` 是開機後的計數，開機未滿 30 秒時相減 underflow → panic。
+service 是開機自動啟動，所以每次開機必踩；第 184 行的 `- 5 秒` 同理。
+
+1.1.9 修正：
+
+- `last_attempt` 改為 `Option<Instant>`（`None` = 從未嘗試 = 立即執行）
+- 健康檢查失敗時設回 `None`，立即重啟 session agent
+- 新增 `retry_due()` 與兩個單元測試
+- 開機後 session agent 立即啟動，不再等 30 秒
+
+排查時也確認了兩台機器實際走**有線**（172.16.12.51 在 Realtek PCIe GbE、1 Gbps），
+Wi-Fi 只是同時存在的次要介面，因此前一版推測的 Wi-Fi 省電不是本次卡頓來源。
+
+詳細 release notes 見 `docs/release-notes-v1.1.9.md`。

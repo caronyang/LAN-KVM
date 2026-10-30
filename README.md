@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.8-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.9-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -12,14 +12,18 @@ Move the pointer past the screen edge, and the other machine takes over — incl
 Windows sign-in screen and UAC prompts. Clipboard (text / image / files) is shared in both
 directions, and the controlling machine's cursor disappears while the peer is in control.
 
-> **Status: v1.1.8 — log rotation, streamed bundles and a Clear logs button on top of 1.1.7.**
-> Verified on two Windows 11 machines: edge switching, sign-in-screen control, Num Lock,
-> boot auto-start, and bidirectional clipboard for text, screenshots and files.
+> **Status: v1.1.9 — boot-time service crash fixed on top of 1.1.8.** Verified on two Windows 11
+> machines on a wired LAN: edge switching, sign-in-screen control, Num Lock, boot auto-start,
+> and bidirectional clipboard for text, screenshots and files.
 >
-> v1.1.8 caps every log file: `session.log`/`service.log` rotate at 5 MB (3 generations),
-> `app.log` at 2 MB (3), and `engine.log` at 8 MB (one previous run). Log bundles keep only
-> the last 2 MB per file, stream instead of buffering whole files in memory, and the UI shows
-> current sizes plus a **Clear logs** button.
+> v1.1.9 fixes a startup crash: the service back-dated an `Instant` by 30 s to schedule its first
+> session-agent launch. On a machine up for less than 30 s — i.e. every boot — that subtraction
+> overflowed and the service panicked, so it took ~30 s and two SCM restarts before the client
+> engine came up. The retry state is now `Option<Instant>` and the agent launches immediately.
+>
+> v1.1.8 caps every log file (5 MB × 3 for session/service, 2 MB × 3 for app, 8 MB × 1 for engine),
+> keeps only the last 2 MB per file in bundles, streams them, and adds log sizes plus a
+> **Clear logs** button to the UI.
 
 ---
 
@@ -55,7 +59,7 @@ directions, and the controlling machine's cursor disappears while the peer is in
 Download the latest installer from **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)**:
 
 ```
-LAN-KVM-Setup-1.1.8.exe
+LAN-KVM-Setup-1.1.9.exe
 ```
 
 Run it (UAC → Yes), choose English or 繁體中文, then:
@@ -71,7 +75,7 @@ auto-start entry. Uninstall from Windows *Settings → Apps*.
 Silent install for IT deployment:
 
 ```powershell
-LAN-KVM-Setup-1.1.8.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.9.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## If the mouse gets stuck
@@ -106,7 +110,7 @@ Prerequisites: Rust 1.80+, Visual Studio Build Tools (MSVC), Inno Setup 6.7+ (in
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.8.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.9.exe
 ```
 
 Local checks:
@@ -130,6 +134,7 @@ cargo build -p lankvm-devtools
 - [Latency and reconnect fixes (v1.1.1–1.1.7)](docs/15-latency-and-reconnect.md)
 - [Release notes v1.1.7](docs/release-notes-v1.1.7.md)
 - [Release notes v1.1.8](docs/release-notes-v1.1.8.md)
+- [Release notes v1.1.9](docs/release-notes-v1.1.9.md)
 - [Log rotation and bundles](docs/16-log-retention.md)
 - [AV / EDR and code signing strategy](docs/04-av-and-signing.md)
 

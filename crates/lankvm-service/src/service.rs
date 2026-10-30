@@ -24,6 +24,16 @@ use crate::logger::log;
 pub const SERVICE_NAME: &str = "LAN-KVM";
 pub const DISPLAY_NAME: &str = "LAN-KVM Service";
 
+/// Minimum gap between session-agent launch attempts.
+const LAUNCH_RETRY: Duration = Duration::from_secs(5);
+
+/// `last = None` means "never attempted" and must be due immediately. Never
+/// compute this by subtracting from `Instant::now()`: that underflows (panics)
+/// when the machine has been up for less than the retry interval.
+fn retry_due(last: Option<Instant>, interval: Duration) -> bool {
+    last.map_or(true, |at| at.elapsed() >= interval)
+}
+
 define_windows_service!(ffi_service_main, service_main);
 
 pub fn run_dispatcher() -> Result<()> {
@@ -90,7 +100,10 @@ fn run_service() -> Result<()> {
     }
 
     let mut child: Option<Child> = None;
-    let mut last_attempt = Instant::now() - Duration::from_secs(30);
+    // `None` = never attempted. Back-dating an `Instant` panicked on machines
+    // that had been up for less than 30 s, which is exactly the boot-time case
+    // (the service is set to start at boot).
+    let mut last_attempt: Option<Instant> = None;
     let mut last_active_log = u32::MAX;
     let mut last_active_seen = u32::MAX;
     let mut last_health = Instant::now();
@@ -116,7 +129,7 @@ fn run_service() -> Result<()> {
             .map(|c| !c.is_running() || c.session_id != active)
             .unwrap_or(true);
 
-        if needs_launch && last_attempt.elapsed() >= Duration::from_secs(5) {
+        if needs_launch && retry_due(last_attempt, LAUNCH_RETRY) {
             if let Some(mut old) = child.take() {
                 if !old.is_running() {
                     log(
@@ -156,7 +169,7 @@ fn run_service() -> Result<()> {
                     );
                 }
             }
-            last_attempt = Instant::now();
+            last_attempt = Some(Instant::now());
         }
 
         if let Some(port) = config.client_port {
@@ -181,7 +194,8 @@ fn run_service() -> Result<()> {
                                 old.stop();
                             }
                             health_failures = 0;
-                            last_attempt = Instant::now() - Duration::from_secs(5);
+                            // Force the next loop iteration to relaunch.
+                            last_attempt = None;
                         }
                     }
                 } else {
@@ -363,4 +377,24 @@ pub fn stop() -> Result<()> {
     service.stop().context("stop service")?;
     println!("Stop requested for {SERVICE_NAME}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retry_is_due_immediately_when_never_attempted() {
+        // This is the boot case: None must not require any Instant math.
+        assert!(retry_due(None, Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn retry_waits_for_the_interval() {
+        assert!(!retry_due(Some(Instant::now()), Duration::from_secs(5)));
+        assert!(retry_due(
+            Some(Instant::now() - Duration::from_millis(50)),
+            Duration::from_millis(10)
+        ));
+    }
 }
