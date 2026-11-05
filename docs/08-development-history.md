@@ -516,3 +516,17 @@ Wi-Fi 只是同時存在的次要介面，因此前一版推測的 Wi-Fi 省電�
 
 判讀：master 若是 `b=-1` / `flags=0x0` → client 沒送高度；若 b/flags 正常但 y 與 client 的
 y 不同 → 換算或 warp 有問題。詳細說明見 `docs/release-notes-v1.1.11.md`。
+---
+
+## 21. 2026-11-05：1.1.12 回程位置收尾
+
+1.1.11 的雙端 log 證實：8 次交班全部精確（client y == master y，每個 Release 都帶
+`flags=0x100` 與 b），整份 log 的 53 次回程沒有任何一次回到進入高度。也就是「目標位置」
+本來就是對的。
+
+1.1.12 處理視覺上的殘留問題：`do_release` 原本先 `restore_cursor()`（顯示游標）再
+`SetCursorPos`，游標可能先出現在被釘住的邊緣位置才跳到目標；改成先 warp、最後才顯示。
+另外 log 加上 warp 後實際位置（`at=Some(Point {...})`），若 `at` 與 `y` 不同就是
+`SetCursorPos` 被限制。
+
+詳細見 `docs/release-notes-v1.1.12.md`。

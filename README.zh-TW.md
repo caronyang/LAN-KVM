@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.11-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.12-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -11,14 +11,12 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 把游標推過螢幕邊界，另一台就接手——包含 **Windows 登入畫面與 UAC**。
 雙向剪貼簿（文字／圖片／檔案）與跨機檔案傳輸，控制期間原電腦的游標會消失。
 
-> **狀態：v1.1.11（回程高度的診斷版）。** 已在兩台 Windows 11 實機（有線區域網路）驗收：
+> **狀態：v1.1.12（游標回程位置）。** 已在兩台 Windows 11 實機（有線區域網路）驗收：
 > 邊界切換、登入畫面操作、Num Lock、開機自動啟動、雙向剪貼簿（文字／截圖／檔案）。
 >
-> v1.1.10 讓游標回到離開對方時的高度；v1.1.11 維持同樣行為，並在兩端加上 log
-> （client `y=`/`ratio=`、master `[net] release ... b= flags=`），讓 bundle 能看出
-> 高度有沒有送出、master 實際套用了什麼。
->
-> v1.1.10 另外修正了顯示模式改變後邊界切換失效（改為即時讀取虛擬桌面範圍），
+> v1.1.11 的 log 證實回程交班本身是精確的（8/8：client y == master y，每個 Release 都帶高度）。
+> v1.1.12 改成「先移動、後顯示」游標，避免它先出現在被釘住的進入位置再跳走，並記錄 warp 後
+> 的實際位置（`at=`）。v1.1.10 讓游標回到離開對方時的高度、修正顯示模式改變後邊界失效；
 > v1.1.9 修正開機時 service 的 `Instant` underflow panic。
 
 ---
@@ -53,7 +51,7 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 從 **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)** 下載最新安裝檔：
 
 ```
-LAN-KVM-Setup-1.1.11.exe
+LAN-KVM-Setup-1.1.12.exe
 ```
 
 執行（UAC 按「是」），選 English 或 繁體中文，然後：
@@ -69,7 +67,7 @@ LAN-KVM-Setup-1.1.11.exe
 IT 大量部署可用無聲安裝：
 
 ```powershell
-LAN-KVM-Setup-1.1.11.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.12.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## 卡住時（緊急取回）
@@ -103,7 +101,7 @@ LAN-KVM-Setup-1.1.11.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.11.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.12.exe
 ```
 
 本機檢查：
@@ -130,6 +128,7 @@ cargo build -p lankvm-devtools
 - [Release notes v1.1.9](docs/release-notes-v1.1.9.md)
 - [Release notes v1.1.10](docs/release-notes-v1.1.10.md)
 - [Release notes v1.1.11](docs/release-notes-v1.1.11.md)
+- [Release notes v1.1.12](docs/release-notes-v1.1.12.md)
 - [紀錄輪替與打包](docs/16-log-retention.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 

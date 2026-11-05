@@ -1204,7 +1204,6 @@ fn do_release(reason: &'static str) {
     }
     send_event(Event::Release { reason });
     win::release_clip();
-    restore_cursor();
     MODS_DOWN.store(0, Ordering::SeqCst);
     PENDING_DX.store(0, Ordering::SeqCst);
     PENDING_DY.store(0, Ordering::SeqCst);
@@ -1238,9 +1237,15 @@ fn do_release(reason: &'static str) {
         win::warp_cursor(x, y);
         if reported != 0 {
             let percent = (reported - 1) as f32 * 100.0 / 65_535.0;
-            plog!("[master] cursor returned at y={y} (client exit height {percent:.1}%)");
+            let after = win::cursor_pos().ok();
+            plog!(
+                "[master] cursor returned at y={y} (client exit height {percent:.1}%) at={after:?}"
+            );
         }
     }
+    // Show the pointer only after it has been moved, so it never appears at the
+    // parked edge position and then jumps.
+    restore_cursor();
     let last = LAST_SEEN_MS.load(Ordering::SeqCst);
     let silent = if last == 0 {
         0
