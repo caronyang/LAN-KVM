@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use lankvm_net::{Packet, PacketKind};
+use lankvm_net::{Packet, PacketKind, FLAG_RELEASE_POSITION};
 
 use crate::desktop;
 use crate::inject::{self, submit, InjectEvent};
@@ -217,6 +217,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                                    // Tell the master where we left so the pointer comes back
                                    // at this height instead of the old entry point.
                     release.b = exit_ratio();
+                    release.flags = FLAG_RELEASE_POSITION;
                     let _ = socket.send_to(&release.encode(), addr);
                     controlled = false;
                     edge_hits = 0;

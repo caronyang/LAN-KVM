@@ -20,7 +20,7 @@ use anyhow::{anyhow, Context, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use lankvm_core::{Edge, Point, Rect};
 use lankvm_input::{at_edge, EdgeDetector};
-use lankvm_net::{Packet, PacketKind};
+use lankvm_net::{Packet, PacketKind, FLAG_RELEASE_POSITION};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -633,10 +633,10 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
                         LAST_SEEN_MS.store(now_ms(), Ordering::SeqCst);
                         RX_PACKETS.fetch_add(1, Ordering::Relaxed);
                         // b carries the client's exit height (0..=65535) so the
-                        // local cursor comes back where the user left it; -1
-                        // means "no position" and keeps the old behaviour.
+                        // local cursor comes back where the user left it. Older
+                        // clients do not set the flag and keep the parked y.
                         RELEASE_RATIO.store(
-                            if packet.b >= 0 {
+                            if packet.flags & FLAG_RELEASE_POSITION != 0 && packet.b >= 0 {
                                 packet.b as u32 + 1
                             } else {
                                 0
@@ -1255,6 +1255,9 @@ fn send_release(socket: &UdpSocket, addr: SocketAddr, seq: &mut u32, reason: i32
     *seq = seq.wrapping_add(1);
     packet.a = reason;
     packet.b = ratio;
+    if ratio >= 0 {
+        packet.flags = FLAG_RELEASE_POSITION;
+    }
     let _ = socket.send_to(&packet.encode(), addr);
 }
 

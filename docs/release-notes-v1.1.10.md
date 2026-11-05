@@ -72,8 +72,8 @@ NN.N%)`.
 
 ```
 LAN-KVM-Setup-1.1.10.exe
-size   2,889,560 bytes
-SHA256 6B7154836E3E573BCD985E29D543AC621EAC7E5B300A54B2DD2C43FA3860F326
+size   2,889,429 bytes
+SHA256 0C76D72027FCDAE144767431567C437C2C4F345CDC63AE01C4FB2341D52B7CB2
 ```
 
 ### Verification
@@ -86,7 +86,9 @@ SHA256 6B7154836E3E573BCD985E29D543AC621EAC7E5B300A54B2DD2C43FA3860F326
 
 ### Notes
 
-- No protocol or input-format changes.
+- No protocol version change. The Release packet now optionally carries the exit height
+  (flag `1<<8`); peers that do not set it keep the old behaviour, so a mixed 1.1.9/1.1.10
+  pair still works.
 - 1.1.9 (boot panic) and 1.1.8 (log rotation/bundles/Clear logs) are included.
 
 ---
@@ -145,8 +147,8 @@ let _ = BOUNDS.set(bounds);      // OnceLock，永不更新
 
 ```
 dist-app\LAN-KVM-Setup-1.1.10.exe
-size   2,889,560 bytes
-SHA256 6B7154836E3E573BCD985E29D543AC621EAC7E5B300A54B2DD2C43FA3860F326
+size   2,889,429 bytes
+SHA256 0C76D72027FCDAE144767431567C437C2C4F345CDC63AE01C4FB2341D52B7CB2
 ```
 
 ### 7. 驗收清單
@@ -159,5 +161,6 @@ SHA256 6B7154836E3E573BCD985E29D543AC621EAC7E5B300A54B2DD2C43FA3860F326
 
 ### 8. 備註
 
-- 沒有改動協定或輸入格式。
+- 沒有改動協定版本。Release 封包多了選用的回程高度（flag `1<<8`）；沒有帶這個 flag 的對端
+  維持舊行為，所以 1.1.9 與 1.1.10 混搭仍可運作。
 - 1.1.9（開機 panic）與 1.1.8（紀錄輪替／bundle／清除紀錄）都包含在內。

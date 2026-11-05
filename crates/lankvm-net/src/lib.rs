@@ -7,6 +7,9 @@
 pub const MAGIC: [u8; 4] = *b"LKVM";
 pub const VERSION: u8 = 1;
 pub const PACKET_LEN: usize = 28;
+/// Release packets: `b` carries the client's exit height ratio (0..=65535).
+/// Older clients do not set it and the master falls back to its parked cursor.
+pub const FLAG_RELEASE_POSITION: u16 = 1 << 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
