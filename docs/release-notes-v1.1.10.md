@@ -51,8 +51,16 @@ does).
   the edge accumulator on a change
 - `do_release` also warps the cursor using live bounds
 
-### Diagnostics (for any remaining cases)
+### Pointer returns at the height it left the client
 
+Before this build, crossing from A to B at mid-height and later leaving B at the top edge
+made the pointer reappear on A at the old mid-height: A's cursor stays pinned at the y it
+entered at. The client now sends its exit height in the Release packet, and the master warps
+the pointer to the same relative height on its own screen (proportional if the resolutions
+differ). `engine.log` records it as `[master] cursor returned at y=... (client exit height
+NN.N%)`.
+
+### Diagnostics (for any remaining cases)
 - `[master] edge push blocked edge=Right cursor=(1919, 507) pushed=140px acc=18px bounds=... clip=... fg=... lmb=false`
   — rate-limited to once per 3 s, only when the pointer is on the edge and 80 px of outward push
   did not trigger. `clip` shows a foreground app confining the pointer, `fg` names that app,
@@ -64,8 +72,8 @@ does).
 
 ```
 LAN-KVM-Setup-1.1.10.exe
-size   2,888,936 bytes
-SHA256 7C7016D73D2D898910982CEC32070481588270AF9390E2A184620E16FCB00461
+size   2,889,560 bytes
+SHA256 6B7154836E3E573BCD985E29D543AC621EAC7E5B300A54B2DD2C43FA3860F326
 ```
 
 ### Verification
@@ -122,6 +130,9 @@ let _ = BOUNDS.set(bounds);      // OnceLock，永不更新
 - 每個 raw input 事件都即時讀 `virtual_bounds()`（4 次 `GetSystemMetrics`，成本可忽略）
 - 心跳每秒比對範圍，變更時寫 `[master] display bounds changed -> ...` 並重設邊界累計
 - `do_release` 也用即時範圍換算游標位置
+- **回程高度**：client 在 Release 封包帶上離開時的 y 比例（`b`），master 依比例把自己的游標
+  放到相同高度（解析度不同時等比例換算），不再固定回到當初進入的高度；log 會記
+  `[master] cursor returned at y=... (client exit height NN.N%)`
 
 ### 5. 診斷（若還有其他原因）
 
@@ -134,8 +145,8 @@ let _ = BOUNDS.set(bounds);      // OnceLock，永不更新
 
 ```
 dist-app\LAN-KVM-Setup-1.1.10.exe
-size   2,888,936 bytes
-SHA256 7C7016D73D2D898910982CEC32070481588270AF9390E2A184620E16FCB00461
+size   2,889,560 bytes
+SHA256 6B7154836E3E573BCD985E29D543AC621EAC7E5B300A54B2DD2C43FA3860F326
 ```
 
 ### 7. 驗收清單

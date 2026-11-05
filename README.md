@@ -20,6 +20,7 @@ directions, and the controlling machine's cursor disappears while the peer is in
 > captured once when the engine started, so a fullscreen app, a resolution switch or a monitor
 > change made the configured edge unreachable and pushing at the screen edge silently did
 > nothing. Bounds are now read live, a change is logged and the edge accumulator is reset.
+> The pointer also returns at the height it left the peer instead of the original entry height.
 > A rate-limited diagnostic records blocked pushes (cursor, bounds, clip rect, foreground app,
 > button state) and the raw-input rate.
 >

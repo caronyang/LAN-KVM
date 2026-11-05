@@ -111,6 +111,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                 let mut release = Packet::new(PacketKind::Release, seq);
                 seq = seq.wrapping_add(1);
                 release.a = 3; // timeout
+                release.b = -1; // no exit position
                 let _ = socket.send_to(&release.encode(), addr);
             }
             log("session", "master silent 15 s; released keys and control");
@@ -213,6 +214,9 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                     let mut release = Packet::new(PacketKind::Release, seq);
                     seq = seq.wrapping_add(1);
                     release.a = 5; // edge
+                                   // Tell the master where we left so the pointer comes back
+                                   // at this height instead of the old entry point.
+                    release.b = exit_ratio();
                     let _ = socket.send_to(&release.encode(), addr);
                     controlled = false;
                     edge_hits = 0;
@@ -294,6 +298,23 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
 /// Windows reports ICMP port-unreachable for a previous send as
 /// WSAECONNRESET on the *next* UDP receive. That is normal for UDP and must
 /// not kill the listener.
+/// Vertical cursor position (0..=65535) on this desktop, or -1 when unknown.
+/// Sent with an edge release so the master returns the pointer at the height
+/// it left at instead of the height it entered at.
+fn exit_ratio() -> i32 {
+    let Ok(bounds) = win::virtual_bounds() else {
+        return -1;
+    };
+    let Ok(cursor) = win::cursor_pos() else {
+        return -1;
+    };
+    if bounds.height() <= 1 {
+        return -1;
+    }
+    (((cursor.y - bounds.top) as i64 * 65_535) / (bounds.height() as i64 - 1)).clamp(0, 65_535)
+        as i32
+}
+
 fn is_ignorable_udp_error(err: &io::Error) -> bool {
     matches!(
         err.kind(),

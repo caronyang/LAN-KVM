@@ -74,6 +74,8 @@ static CURSOR_HIDDEN: AtomicBool = AtomicBool::new(false);
 static CURSOR_HIDER: AtomicIsize = AtomicIsize::new(0);
 static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
 static RELEASE_REASON: AtomicU32 = AtomicU32::new(0);
+/// Exit height reported by the client with a Release packet (ratio + 1, 0 = none).
+static RELEASE_RATIO: AtomicU32 = AtomicU32::new(0);
 static START: OnceLock<Instant> = OnceLock::new();
 static EDGE_KIND: OnceLock<Edge> = OnceLock::new();
 static EDGE: OnceLock<Mutex<EdgeDetector>> = OnceLock::new();
@@ -334,7 +336,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
             release_keys(&mut pressed);
             shift_down = false;
             if let Some(addr) = master_addr {
-                send_release(&socket, addr, &mut seq, 3);
+                send_release(&socket, addr, &mut seq, 3, -1);
             }
             plog!("[client] master silent 15 s; released keys and control");
         }
@@ -417,7 +419,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
                 // Two consecutive outward packets: a single flick near the
                 // edge should not hand control back.
                 if edge_hits >= 2 {
-                    send_release(&socket, addr, &mut seq, 5);
+                    send_release(&socket, addr, &mut seq, 5, exit_ratio());
                     controlled = false;
                     edge_hits = 0;
                     release_keys(&mut pressed);
@@ -492,7 +494,7 @@ pub fn run_client(port: u16, seconds: u64, release_px: i32) -> Result<()> {
 
     if controlled {
         if let Some(addr) = master_addr {
-            send_release(&socket, addr, &mut seq, 4);
+            send_release(&socket, addr, &mut seq, 4, -1);
         }
         release_keys(&mut pressed);
     }
@@ -630,6 +632,17 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
                     PacketKind::Release => {
                         LAST_SEEN_MS.store(now_ms(), Ordering::SeqCst);
                         RX_PACKETS.fetch_add(1, Ordering::Relaxed);
+                        // b carries the client's exit height (0..=65535) so the
+                        // local cursor comes back where the user left it; -1
+                        // means "no position" and keeps the old behaviour.
+                        RELEASE_RATIO.store(
+                            if packet.b >= 0 {
+                                packet.b as u32 + 1
+                            } else {
+                                0
+                            },
+                            Ordering::SeqCst,
+                        );
                         post_release(reason_name(packet.a.max(0) as u32));
                     }
                     PacketKind::Hello => {
@@ -1197,6 +1210,7 @@ fn do_release(reason: &'static str) {
         detector.lock().unwrap_or_else(|e| e.into_inner()).reset();
     }
 
+    let reported = RELEASE_RATIO.swap(0, Ordering::SeqCst);
     if let (Some(bounds), Some(edge), Ok(cursor)) = (
         win::virtual_bounds().ok(),
         EDGE_KIND.get(),
@@ -1207,7 +1221,19 @@ fn do_release(reason: &'static str) {
         } else {
             (bounds.left + 40).min(bounds.right - 1)
         };
-        win::warp_cursor(x, cursor.y);
+        // The client reports the height it was left at, so the pointer comes
+        // back there instead of at the height it originally crossed at.
+        let y = if reported != 0 {
+            let ratio = (reported - 1) as f32 / 65_535.0;
+            bounds.top + (ratio * (bounds.height().max(2) - 1) as f32).round() as i32
+        } else {
+            cursor.y
+        };
+        win::warp_cursor(x, y);
+        if reported != 0 {
+            let percent = (reported - 1) as f32 * 100.0 / 65_535.0;
+            plog!("[master] cursor returned at y={y} (client exit height {percent:.1}%)");
+        }
     }
     let last = LAST_SEEN_MS.load(Ordering::SeqCst);
     let silent = if last == 0 {
@@ -1224,11 +1250,27 @@ fn send_event(event: Event) {
     }
 }
 
-fn send_release(socket: &UdpSocket, addr: SocketAddr, seq: &mut u32, reason: i32) {
+fn send_release(socket: &UdpSocket, addr: SocketAddr, seq: &mut u32, reason: i32, ratio: i32) {
     let mut packet = Packet::new(PacketKind::Release, *seq);
     *seq = seq.wrapping_add(1);
     packet.a = reason;
+    packet.b = ratio;
     let _ = socket.send_to(&packet.encode(), addr);
+}
+
+/// Cursor height as a 0..=65535 ratio, or -1 when it cannot be read.
+fn exit_ratio() -> i32 {
+    let Ok(bounds) = win::virtual_bounds() else {
+        return -1;
+    };
+    let Ok(cursor) = win::cursor_pos() else {
+        return -1;
+    };
+    if bounds.height() <= 1 {
+        return -1;
+    }
+    (((cursor.y - bounds.top) as i64 * 65_535) / (bounds.height() as i64 - 1)).clamp(0, 65_535)
+        as i32
 }
 
 fn release_keys(pressed: &mut HashSet<(u16, bool)>) {
