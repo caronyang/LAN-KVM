@@ -643,6 +643,12 @@ fn receiver_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
                             },
                             Ordering::SeqCst,
                         );
+                        plog!(
+                            "[net] release reason={} b={} flags={:#x}",
+                            packet.a,
+                            packet.b,
+                            packet.flags
+                        );
                         post_release(reason_name(packet.a.max(0) as u32));
                     }
                     PacketKind::Hello => {

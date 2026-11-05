@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.10-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.11-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -11,16 +11,15 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 把游標推過螢幕邊界，另一台就接手——包含 **Windows 登入畫面與 UAC**。
 雙向剪貼簿（文字／圖片／檔案）與跨機檔案傳輸，控制期間原電腦的游標會消失。
 
-> **狀態：v1.1.10（修正顯示模式改變後邊界切換失效）。** 已在兩台 Windows 11 實機（有線區域網路）
-> 驗收：邊界切換、登入畫面操作、Num Lock、開機自動啟動、雙向剪貼簿（文字／截圖／檔案）。
+> **狀態：v1.1.11（回程高度的診斷版）。** 已在兩台 Windows 11 實機（有線區域網路）驗收：
+> 邊界切換、登入畫面操作、Num Lock、開機自動啟動、雙向剪貼簿（文字／截圖／檔案）。
 >
-> v1.1.10 修正 master 的邊界觸發：原本拿「engine 啟動時抓一次的虛擬桌面範圍」判斷游標是否到達
-> 邊界，只要之後有全螢幕程式、解析度切換或螢幕增減，設定的邊界就永遠到不了，推邊界會完全
-> 沒反應。現在每次事件都讀即時範圍，變更時寫 log 並重設累計；另外新增限流診斷（游標、範圍、
-> clip、前景程式、按鍵狀態）與 raw input 速率。游標回程時也會回到離開對方時的高度，
-> 不再固定回到當初進入的位置。
+> v1.1.10 讓游標回到離開對方時的高度；v1.1.11 維持同樣行為，並在兩端加上 log
+> （client `y=`/`ratio=`、master `[net] release ... b= flags=`），讓 bundle 能看出
+> 高度有沒有送出、master 實際套用了什麼。
 >
-> v1.1.9 修正開機時 service panic；v1.1.8 加入紀錄輪替、串流 bundle 與「清除紀錄」。
+> v1.1.10 另外修正了顯示模式改變後邊界切換失效（改為即時讀取虛擬桌面範圍），
+> v1.1.9 修正開機時 service 的 `Instant` underflow panic。
 
 ---
 
@@ -54,7 +53,7 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 從 **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)** 下載最新安裝檔：
 
 ```
-LAN-KVM-Setup-1.1.10.exe
+LAN-KVM-Setup-1.1.11.exe
 ```
 
 執行（UAC 按「是」），選 English 或 繁體中文，然後：
@@ -70,7 +69,7 @@ LAN-KVM-Setup-1.1.10.exe
 IT 大量部署可用無聲安裝：
 
 ```powershell
-LAN-KVM-Setup-1.1.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.11.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## 卡住時（緊急取回）
@@ -104,7 +103,7 @@ LAN-KVM-Setup-1.1.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.10.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.11.exe
 ```
 
 本機檢查：
@@ -130,6 +129,7 @@ cargo build -p lankvm-devtools
 - [Release notes v1.1.8](docs/release-notes-v1.1.8.md)
 - [Release notes v1.1.9](docs/release-notes-v1.1.9.md)
 - [Release notes v1.1.10](docs/release-notes-v1.1.10.md)
+- [Release notes v1.1.11](docs/release-notes-v1.1.11.md)
 - [紀錄輪替與打包](docs/16-log-retention.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 

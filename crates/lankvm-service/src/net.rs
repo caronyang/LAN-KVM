@@ -163,14 +163,14 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                 edge_hits = 0;
                 controlled = true;
                 bounds = win::virtual_bounds().ok();
+                let ratio = packet.a.clamp(0, 65_535) as u16;
                 log(
                     "session",
-                    format!("switch: controlled=true entry_edge={entry_edge} bounds={bounds:?}"),
+                    format!(
+                        "switch: controlled=true entry_edge={entry_edge} ratio={ratio} bounds={bounds:?}"
+                    ),
                 );
-                submit(InjectEvent::Switch {
-                    ratio: packet.a.clamp(0, 65_535) as u16,
-                    entry_edge,
-                });
+                submit(InjectEvent::Switch { ratio, entry_edge });
             }
             PacketKind::Motion => {
                 if !controlled {
@@ -211,12 +211,13 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                 // Require two consecutive outward packets at the edge: a single
                 // flick near the edge must not hand control back.
                 if edge_hits >= 2 {
+                    let (exit_y, ratio) = exit_position();
                     let mut release = Packet::new(PacketKind::Release, seq);
                     seq = seq.wrapping_add(1);
                     release.a = 5; // edge
                                    // Tell the master where we left so the pointer comes back
                                    // at this height instead of the old entry point.
-                    release.b = exit_ratio();
+                    release.b = ratio;
                     release.flags = FLAG_RELEASE_POSITION;
                     let _ = socket.send_to(&release.encode(), addr);
                     controlled = false;
@@ -225,7 +226,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                     log(
                         "session",
                         format!(
-                            "cursor at entry edge -> release (virtual_x={virtual_x}, edge={entry_edge})"
+                            "cursor at entry edge -> release (virtual_x={virtual_x}, edge={entry_edge}, y={exit_y}, ratio={ratio})"
                         ),
                     );
                     continue;
@@ -302,18 +303,22 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
 /// Vertical cursor position (0..=65535) on this desktop, or -1 when unknown.
 /// Sent with an edge release so the master returns the pointer at the height
 /// it left at instead of the height it entered at.
-fn exit_ratio() -> i32 {
+/// Cursor (y, height ratio 0..=65535) on this desktop, or (-1, -1) when it
+/// cannot be read. Logged and sent with an edge release so the master returns
+/// the pointer at the height it left at.
+fn exit_position() -> (i32, i32) {
     let Ok(bounds) = win::virtual_bounds() else {
-        return -1;
+        return (-1, -1);
     };
     let Ok(cursor) = win::cursor_pos() else {
-        return -1;
+        return (-1, -1);
     };
     if bounds.height() <= 1 {
-        return -1;
+        return (cursor.y, -1);
     }
-    (((cursor.y - bounds.top) as i64 * 65_535) / (bounds.height() as i64 - 1)).clamp(0, 65_535)
-        as i32
+    let ratio = (((cursor.y - bounds.top) as i64 * 65_535) / (bounds.height() as i64 - 1))
+        .clamp(0, 65_535) as i32;
+    (cursor.y, ratio)
 }
 
 fn is_ignorable_udp_error(err: &io::Error) -> bool {

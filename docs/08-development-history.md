@@ -496,3 +496,23 @@ Wi-Fi 只是同時存在的次要介面，因此前一版推測的 Wi-Fi 省電�
 - `[net]` 統計新增 `raw=N/s`，可區分輸入中斷與邊界判斷錯誤
 
 詳細說明見 `docs/release-notes-v1.1.10.md`。
+---
+
+## 20. 2026-11-05：1.1.11 回程高度診斷
+
+1.1.10 加上「回到離開對方時的高度」後，使用者回報大多正確，但偶爾會回到當初進入的高度：
+「上進、下回，卻回到上方；下進、上回，卻回到下方」。這個現象正是 master 沒收到 exit
+高度、退回原本被釘住的游標位置。
+
+1.1.11 只加 log，不改行為：
+
+- client（service agent）
+  - `switch: ... ratio=... bounds=...`
+  - `inject Switch ... -> (x, y)`
+  - `cursor at entry edge -> release (virtual_x=..., edge=..., y=..., ratio=...)`
+- master（engine）
+  - `[net] release reason=... b=... flags=0x...`（看 flag `1<<8` 與 b 是否有值）
+  - `[master] cursor returned at y=... (client exit height ...%)`
+
+判讀：master 若是 `b=-1` / `flags=0x0` → client 沒送高度；若 b/flags 正常但 y 與 client 的
+y 不同 → 換算或 warp 有問題。詳細說明見 `docs/release-notes-v1.1.11.md`。

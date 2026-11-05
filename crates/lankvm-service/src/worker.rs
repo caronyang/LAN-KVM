@@ -269,19 +269,30 @@ fn apply(
             release_keys(pressed);
             *shift_down = false;
             inject::clear_fail_streak();
-            log(
-                "session",
-                format!("{desktop}: inject Switch entry_edge={entry_edge}"),
-            );
-            if let Ok(bounds) = win::virtual_bounds() {
-                let ratio = ratio as f32 / 65_535.0;
-                let y = bounds.top + (ratio * (bounds.height().max(2) - 1) as f32).round() as i32;
-                let x = if entry_edge == 2 {
-                    bounds.right - 1
-                } else {
-                    bounds.left
-                };
-                let _ = win::warp_cursor(x, y);
+            match win::virtual_bounds() {
+                Ok(bounds) => {
+                    let ratio_f = ratio as f32 / 65_535.0;
+                    let y =
+                        bounds.top + (ratio_f * (bounds.height().max(2) - 1) as f32).round() as i32;
+                    let x = if entry_edge == 2 {
+                        bounds.right - 1
+                    } else {
+                        bounds.left
+                    };
+                    let _ = win::warp_cursor(x, y);
+                    log(
+                        "session",
+                        format!(
+                            "{desktop}: inject Switch entry_edge={entry_edge} ratio={ratio} -> ({x}, {y})"
+                        ),
+                    );
+                }
+                Err(_) => log(
+                    "session",
+                    format!(
+                        "{desktop}: inject Switch entry_edge={entry_edge} ratio={ratio} (no bounds)"
+                    ),
+                ),
             }
         }
         InjectEvent::Motion { dx, dy } => {
