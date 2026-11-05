@@ -50,16 +50,17 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, ClipCursor, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetCursorPos, GetMessageW, GetSystemMetrics, PostThreadMessageW, RegisterClassW, SetCursor,
-    SetCursorPos, SetLayeredWindowAttributes, SetWindowPos, SetWindowsHookExW, ShowCursor,
-    ShowWindow, TranslateMessage, UnhookWindowsHookEx, HC_ACTION, HWND_TOPMOST, KBDLLHOOKSTRUCT,
-    LLKHF_EXTENDED, LLKHF_INJECTED, LLMHF_INJECTED, LWA_ALPHA, MONITORINFOF_PRIMARY, MSG,
-    MSLLHOOKSTRUCT, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WH_MOUSE_LL,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SETCURSOR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
-    WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    GetClassNameW, GetClipCursor, GetCursorPos, GetForegroundWindow, GetMessageW, GetSystemMetrics,
+    PostThreadMessageW, RegisterClassW, SetCursor, SetCursorPos, SetLayeredWindowAttributes,
+    SetWindowPos, SetWindowsHookExW, ShowCursor, ShowWindow, TranslateMessage, UnhookWindowsHookEx,
+    HC_ACTION, HWND_TOPMOST, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED, LLMHF_INJECTED,
+    LWA_ALPHA, MONITORINFOF_PRIMARY, MSG, MSLLHOOKSTRUCT, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::ProbeReport;
@@ -178,6 +179,36 @@ pub fn virtual_bounds() -> Result<Rect> {
             GetSystemMetrics(SM_CYVIRTUALSCREEN),
         ))
     }
+}
+
+/// System-wide cursor clip, if an app (or LAN-KVM itself) has confined the
+/// pointer. Used for diagnostics and to explain a cursor that cannot reach the
+/// screen edge.
+pub fn clip_cursor_rect() -> Option<Rect> {
+    let mut rect: RECT = unsafe { zeroed() };
+    if unsafe { GetClipCursor(&mut rect) } == 0 {
+        return None;
+    }
+    Some(Rect {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+    })
+}
+
+/// Class name of the foreground window (diagnostics only).
+pub fn foreground_class() -> String {
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd.is_null() {
+        return String::new();
+    }
+    let mut buffer = [0u16; 128];
+    let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    if len <= 0 {
+        return String::new();
+    }
+    String::from_utf16_lossy(&buffer[..len as usize])
 }
 
 pub fn cursor_pos() -> Result<Point> {

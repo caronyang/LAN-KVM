@@ -9,7 +9,9 @@ use std::io;
 use std::mem::{size_of, zeroed};
 use std::net::{SocketAddr, UdpSocket};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU64, Ordering,
+};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -17,7 +19,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Context, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use lankvm_core::{Edge, Point, Rect};
-use lankvm_input::EdgeDetector;
+use lankvm_input::{at_edge, EdgeDetector};
 use lankvm_net::{Packet, PacketKind};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -65,14 +67,24 @@ static MAIN_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 /// Last time we heard anything from the peer (PONG, keepalive or release).
 static LAST_SEEN_MS: AtomicU64 = AtomicU64::new(0);
 static REMOTE_MOTION: AtomicU64 = AtomicU64::new(0);
+/// Every relative mouse event seen, whether remote or local. Makes it possible
+/// to tell "raw input stopped" apart from "the edge test failed" in logs.
+static RAW_EVENTS: AtomicU64 = AtomicU64::new(0);
 static CURSOR_HIDDEN: AtomicBool = AtomicBool::new(false);
 static CURSOR_HIDER: AtomicIsize = AtomicIsize::new(0);
 static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
 static RELEASE_REASON: AtomicU32 = AtomicU32::new(0);
 static START: OnceLock<Instant> = OnceLock::new();
-static BOUNDS: OnceLock<Rect> = OnceLock::new();
 static EDGE_KIND: OnceLock<Edge> = OnceLock::new();
 static EDGE: OnceLock<Mutex<EdgeDetector>> = OnceLock::new();
+/// Last virtual-desktop bounds seen by the heartbeat thread, so a display mode
+/// change (fullscreen app, resolution switch, monitor added/removed) is logged
+/// and resets the edge accumulator.
+static BOUNDS_SNAPSHOT: Mutex<Option<Rect>> = Mutex::new(None);
+/// Diagnostics: how far the user has pushed against the edge without a switch.
+static BLOCKED_PUSH_PX: AtomicI64 = AtomicI64::new(0);
+static BLOCKED_PUSH_MS: AtomicU64 = AtomicU64::new(0);
+static BLOCKED_WARN_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Unconsumed relative mouse motion. The sender coalesces it into one packet
 /// every few milliseconds instead of sending one packet per raw input event.
@@ -179,8 +191,6 @@ pub fn run_master(
 
     let start = Instant::now();
     let _ = START.set(start);
-    let bounds = win::virtual_bounds()?;
-    let _ = BOUNDS.set(bounds);
     let _ = EDGE_KIND.set(edge);
     let _ = EDGE.set(Mutex::new(EdgeDetector::new(edge, trigger_px, trigger_ms)));
 
@@ -702,9 +712,26 @@ fn heartbeat_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
 
         send_ping(&socket);
 
+        // A fullscreen app, resolution switch or monitor change moves the
+        // virtual bounds. The edge check now reads them live, but log the
+        // change and start a fresh accumulation so the next push is clean.
+        if let Ok(bounds) = win::virtual_bounds() {
+            let mut seen = BOUNDS_SNAPSHOT.lock().unwrap_or_else(|e| e.into_inner());
+            if *seen != Some(bounds) {
+                if seen.is_some() {
+                    plog!("[master] display bounds changed -> {bounds:?}");
+                    if let Some(detector) = EDGE.get() {
+                        detector.lock().unwrap_or_else(|e| e.into_inner()).reset();
+                    }
+                }
+                *seen = Some(bounds);
+            }
+        }
+
         if last_stats.elapsed() >= Duration::from_secs(5) {
             last_stats = Instant::now();
             let motion = REMOTE_MOTION.swap(0, Ordering::Relaxed);
+            let raw = RAW_EVENTS.swap(0, Ordering::Relaxed) / 5;
             let tx = TX_PACKETS.swap(0, Ordering::Relaxed);
             let rx = RX_PACKETS.swap(0, Ordering::Relaxed);
             let max_rtt = RTT_MAX_WINDOW.swap(0, Ordering::Relaxed);
@@ -719,7 +746,7 @@ fn heartbeat_loop(socket: UdpSocket, stop: Arc<AtomicBool>) {
                 plog!("[master] remote motion {motion}/s");
             }
             plog!(
-                "[net] tx={tx} rx={rx} rtt={last_rtt}ms rtt_max={max_rtt}ms motion={motion}/s silent={age}ms remote={}",
+                "[net] tx={tx} rx={rx} rtt={last_rtt}ms rtt_max={max_rtt}ms motion={motion}/s raw={raw}/s silent={age}ms remote={}",
                 REMOTE.load(Ordering::SeqCst)
             );
         }
@@ -961,6 +988,7 @@ fn handle_raw_input(lparam: LPARAM) {
     if dx == 0 && dy == 0 {
         return;
     }
+    RAW_EVENTS.fetch_add(1, Ordering::Relaxed);
 
     if REMOTE.load(Ordering::SeqCst) {
         REMOTE_MOTION.fetch_add(1, Ordering::Relaxed);
@@ -971,25 +999,90 @@ fn handle_raw_input(lparam: LPARAM) {
         return;
     }
 
-    let Some(bounds) = BOUNDS.get() else {
+    let Ok(bounds) = win::virtual_bounds() else {
         return;
     };
-    if unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } < 0 {
-        return;
-    }
     let Ok(cursor) = win::cursor_pos() else {
         return;
     };
+    if unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } < 0 {
+        // Dragging must never switch. Still note it when the pointer sits on
+        // the edge, so a stuck/held button shows up in the diagnostics.
+        note_blocked_push(cursor, bounds, dx, dy);
+        return;
+    }
     let trigger = {
         let Some(detector) = EDGE.get() else {
             return;
         };
         let mut detector = detector.lock().unwrap_or_else(|e| e.into_inner());
-        detector.update(cursor, *bounds, dx as f32, dy as f32, now_ms())
+        detector.update(cursor, bounds, dx as f32, dy as f32, now_ms())
     };
     if trigger {
-        do_switch(cursor, *bounds);
+        do_switch(cursor, bounds);
+    } else {
+        note_blocked_push(cursor, bounds, dx, dy);
     }
+}
+
+/// Rate-limited diagnostic for "I pushed at the edge and nothing happened".
+///
+/// The snapshot is deliberately complete: cursor position, live virtual
+/// bounds, active cursor clip, foreground window class and physical button
+/// state. Between them they distinguish a clipped/granted pointer from a
+/// stale display mode or a swallowed raw-input event.
+fn note_blocked_push(cursor: Point, bounds: Rect, dx: i32, dy: i32) {
+    let Some(edge) = EDGE_KIND.get().copied() else {
+        return;
+    };
+    // Only meaningful when the pointer is actually sitting on the edge; a
+    // normal movement across the middle of the screen must not produce logs.
+    if !at_edge(cursor, bounds, edge) {
+        BLOCKED_PUSH_PX.store(0, Ordering::Relaxed);
+        return;
+    }
+    let now = now_ms();
+    if now.saturating_sub(BLOCKED_PUSH_MS.load(Ordering::Relaxed)) > 400 {
+        BLOCKED_PUSH_PX.store(0, Ordering::Relaxed);
+    }
+    BLOCKED_PUSH_MS.store(now, Ordering::Relaxed);
+
+    let outward = match edge {
+        Edge::Left => (-dx).max(0),
+        Edge::Right => dx.max(0),
+        Edge::Top => (-dy).max(0),
+        Edge::Bottom => dy.max(0),
+    };
+    if outward <= 0 {
+        return;
+    }
+    let pushed = BLOCKED_PUSH_PX.fetch_add(outward as i64, Ordering::Relaxed) + outward as i64;
+    if pushed < 80 {
+        return;
+    }
+    if now.saturating_sub(BLOCKED_WARN_MS.load(Ordering::Relaxed)) < 3_000 {
+        return;
+    }
+    BLOCKED_WARN_MS.store(now, Ordering::Relaxed);
+    BLOCKED_PUSH_PX.store(0, Ordering::Relaxed);
+
+    let accumulated = EDGE
+        .get()
+        .map(|detector| {
+            detector
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .accumulated()
+        })
+        .unwrap_or(0.0);
+    let lmb = unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } < 0;
+    plog!(
+        "[master] edge push blocked edge={edge:?} cursor=({}, {}) pushed={pushed}px acc={accumulated:.0}px bounds={bounds:?} clip={:?} fg={} lmb={lmb}",
+        cursor.x,
+        cursor.y,
+        win::clip_cursor_rect(),
+        win::foreground_class()
+    );
 }
 
 fn do_switch(cursor: Point, bounds: Rect) {
@@ -1104,9 +1197,11 @@ fn do_release(reason: &'static str) {
         detector.lock().unwrap_or_else(|e| e.into_inner()).reset();
     }
 
-    if let (Some(bounds), Some(edge), Ok(cursor)) =
-        (BOUNDS.get(), EDGE_KIND.get(), win::cursor_pos())
-    {
+    if let (Some(bounds), Some(edge), Ok(cursor)) = (
+        win::virtual_bounds().ok(),
+        EDGE_KIND.get(),
+        win::cursor_pos(),
+    ) {
         let x = if *edge == Edge::Right {
             (bounds.right - 40).max(bounds.left)
         } else {

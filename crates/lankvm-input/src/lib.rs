@@ -44,6 +44,11 @@ impl EdgeDetector {
         self.fired = false;
     }
 
+    /// How far the outward push has accumulated inside the current window.
+    pub fn accumulated(&self) -> f32 {
+        self.accumulated
+    }
+
     /// Returns `true` exactly once when the threshold is crossed.
     ///
     /// `dx`/`dy` are the raw (unaccelerated) deltas since the previous sample.

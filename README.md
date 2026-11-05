@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.9-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.10-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -12,18 +12,19 @@ Move the pointer past the screen edge, and the other machine takes over — incl
 Windows sign-in screen and UAC prompts. Clipboard (text / image / files) is shared in both
 directions, and the controlling machine's cursor disappears while the peer is in control.
 
-> **Status: v1.1.9 — boot-time service crash fixed on top of 1.1.8.** Verified on two Windows 11
-> machines on a wired LAN: edge switching, sign-in-screen control, Num Lock, boot auto-start,
-> and bidirectional clipboard for text, screenshots and files.
+> **Status: v1.1.10 — edge switching no longer dies after a display-mode change.** Verified on two
+> Windows 11 machines on a wired LAN: edge switching, sign-in-screen control, Num Lock, boot
+> auto-start, and bidirectional clipboard for text, screenshots and files.
 >
-> v1.1.9 fixes a startup crash: the service back-dated an `Instant` by 30 s to schedule its first
-> session-agent launch. On a machine up for less than 30 s — i.e. every boot — that subtraction
-> overflowed and the service panicked, so it took ~30 s and two SCM restarts before the client
-> engine came up. The retry state is now `Option<Instant>` and the agent launches immediately.
+> v1.1.10 fixes the master edge trigger: it compared the cursor against virtual-desktop bounds
+> captured once when the engine started, so a fullscreen app, a resolution switch or a monitor
+> change made the configured edge unreachable and pushing at the screen edge silently did
+> nothing. Bounds are now read live, a change is logged and the edge accumulator is reset.
+> A rate-limited diagnostic records blocked pushes (cursor, bounds, clip rect, foreground app,
+> button state) and the raw-input rate.
 >
-> v1.1.8 caps every log file (5 MB × 3 for session/service, 2 MB × 3 for app, 8 MB × 1 for engine),
-> keeps only the last 2 MB per file in bundles, streams them, and adds log sizes plus a
-> **Clear logs** button to the UI.
+> v1.1.9 fixed the boot-time service crash (an `Instant` underflow). v1.1.8 added log rotation,
+> streamed log bundles and the **Clear logs** button.
 
 ---
 
@@ -59,7 +60,7 @@ directions, and the controlling machine's cursor disappears while the peer is in
 Download the latest installer from **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)**:
 
 ```
-LAN-KVM-Setup-1.1.9.exe
+LAN-KVM-Setup-1.1.10.exe
 ```
 
 Run it (UAC → Yes), choose English or 繁體中文, then:
@@ -75,7 +76,7 @@ auto-start entry. Uninstall from Windows *Settings → Apps*.
 Silent install for IT deployment:
 
 ```powershell
-LAN-KVM-Setup-1.1.9.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## If the mouse gets stuck
@@ -110,7 +111,7 @@ Prerequisites: Rust 1.80+, Visual Studio Build Tools (MSVC), Inno Setup 6.7+ (in
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.9.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.10.exe
 ```
 
 Local checks:
@@ -135,6 +136,7 @@ cargo build -p lankvm-devtools
 - [Release notes v1.1.7](docs/release-notes-v1.1.7.md)
 - [Release notes v1.1.8](docs/release-notes-v1.1.8.md)
 - [Release notes v1.1.9](docs/release-notes-v1.1.9.md)
+- [Release notes v1.1.10](docs/release-notes-v1.1.10.md)
 - [Log rotation and bundles](docs/16-log-retention.md)
 - [AV / EDR and code signing strategy](docs/04-av-and-signing.md)
 
