@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.12-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.13-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -11,13 +11,14 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 把游標推過螢幕邊界，另一台就接手——包含 **Windows 登入畫面與 UAC**。
 雙向剪貼簿（文字／圖片／檔案）與跨機檔案傳輸，控制期間原電腦的游標會消失。
 
-> **狀態：v1.1.12（游標回程位置）。** 已在兩台 Windows 11 實機（有線區域網路）驗收：
+> **狀態：v1.1.13（回程可靠度）。** 已在兩台 Windows 11 實機（有線區域網路）驗收：
 > 邊界切換、登入畫面操作、Num Lock、開機自動啟動、雙向剪貼簿（文字／截圖／檔案）。
 >
-> v1.1.11 的 log 證實回程交班本身是精確的（8/8：client y == master y，每個 Release 都帶高度）。
-> v1.1.12 改成「先移動、後顯示」游標，避免它先出現在被釘住的進入位置再跳走，並記錄 warp 後
-> 的實際位置（`at=`）。v1.1.10 讓游標回到離開對方時的高度、修正顯示模式改變後邊界失效；
-> v1.1.9 修正開機時 service 的 `Instant` underflow panic。
+> v1.1.13 修正「在被控端操作一段時間後，推邊界回不去、要試很多次」：client 原本把取得控制後
+> 的所有滑鼠位移累加成一個總和，但這個總和會偏離實際游標（滑鼠加速、以及被螢幕邊緣夾掉的
+> 位移），每次在邊界重試都從同一個偏移量開始，所以沒有進展。現在只計算「游標真的貼在邊界時」
+> 的推力。v1.1.12 改成先移動再顯示游標並確認回程高度；v1.1.10 讓游標回到離開高度、修正顯示
+> 模式改變後邊界失效；v1.1.9 修正開機時 service 的 `Instant` underflow panic。
 
 ---
 
@@ -51,7 +52,7 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 從 **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)** 下載最新安裝檔：
 
 ```
-LAN-KVM-Setup-1.1.12.exe
+LAN-KVM-Setup-1.1.13.exe
 ```
 
 執行（UAC 按「是」），選 English 或 繁體中文，然後：
@@ -67,7 +68,7 @@ LAN-KVM-Setup-1.1.12.exe
 IT 大量部署可用無聲安裝：
 
 ```powershell
-LAN-KVM-Setup-1.1.12.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.13.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## 卡住時（緊急取回）
@@ -101,7 +102,7 @@ LAN-KVM-Setup-1.1.12.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.12.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.13.exe
 ```
 
 本機檢查：
@@ -128,7 +129,7 @@ cargo build -p lankvm-devtools
 - [Release notes v1.1.9](docs/release-notes-v1.1.9.md)
 - [Release notes v1.1.10](docs/release-notes-v1.1.10.md)
 - [Release notes v1.1.11](docs/release-notes-v1.1.11.md)
-- [Release notes v1.1.12](docs/release-notes-v1.1.12.md)
+- [Release notes v1.1.13](docs/release-notes-v1.1.13.md)
 - [紀錄輪替與打包](docs/16-log-retention.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 

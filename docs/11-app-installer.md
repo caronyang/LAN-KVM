@@ -240,7 +240,7 @@ Log：
 
 ```
 dist-app/
-  LAN-KVM-Setup-1.1.12.exe      A76C41E90CF1C13C739817A5AF7E70C6355D932964C4AC112AD783412941E309
+  LAN-KVM-Setup-1.1.13.exe      030ECAED1D9CCA3B185D71F8D2B2F6052D1706FED19C41E68FC68302E263F946
   LAN-KVM-Setup-1.0.0.exe       C399AE8ABC1B810C602E2933F3174A8F5136376C16FBF22B7913169B648B27E0
   LAN-KVM-Setup-0.4-inno.exe    5143E1DA662B0D2041AF4F932BD5765C7CA3514A8BE579C9BF896B8FEAF8ECBA
   LAN-KVM-Setup-0.3-clip3.exe   5D11F0CFED949EEC3FDA7DA85A4A5079FC65EC526A0437D2F2D5C1A1446274C1
@@ -248,7 +248,7 @@ dist-app/
   README.txt
 ```
 
-> **`1.1.12` 是目前版本**（延遲／跳回／鍵盤／緊急取回修正，公開 release `v1.1.12`）。
+> **`1.1.13` 是目前版本**（回程邊界可靠度修正，公開 release `v1.1.13`）。
 > `v1.0.0` 是首個公開發佈版。建置方式與安裝/解除安裝細節見
 > [`docs/14-bilingual-and-inno.md`](14-bilingual-and-inno.md)、
 > [`docs/15-latency-and-reconnect.md`](15-latency-and-reconnect.md)。

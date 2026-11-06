@@ -12,6 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use lankvm_input::ReturnPush;
 use lankvm_net::{Packet, PacketKind, FLAG_RELEASE_POSITION};
 
 use crate::desktop;
@@ -47,8 +48,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
     let mut last_hello = false;
     let mut controlled = false;
     let mut entry_edge = 1i32;
-    let mut virtual_x = 0i32;
-    let mut edge_hits = 0u32;
+    let mut edge_push = ReturnPush::new(release_px);
     let mut bounds = None;
     let mut last_desktop_gen = desktop::generation();
     // Only send unsolicited keepalives to an address that recently sent us
@@ -95,8 +95,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         let gen = desktop::generation();
         if gen != last_desktop_gen {
             last_desktop_gen = gen;
-            virtual_x = 0;
-            edge_hits = 0;
+            edge_push.reset();
             log("session", "desktop changed -> edge accumulator reset");
         }
 
@@ -105,7 +104,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
         // tell the master to drop control if it is still alive.
         if controlled && last_packet.elapsed() > Duration::from_secs(15) {
             controlled = false;
-            edge_hits = 0;
+            edge_push.reset();
             submit(InjectEvent::Release);
             if let Some(addr) = master_addr {
                 let mut release = Packet::new(PacketKind::Release, seq);
@@ -159,8 +158,7 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
             }
             PacketKind::Switch => {
                 entry_edge = packet.b.clamp(1, 2);
-                virtual_x = 0;
-                edge_hits = 0;
+                edge_push.reset();
                 controlled = true;
                 bounds = win::virtual_bounds().ok();
                 let ratio = packet.a.clamp(0, 65_535) as u16;
@@ -176,41 +174,27 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                 if !controlled {
                     continue;
                 }
-                virtual_x = virtual_x.saturating_add(packet.a);
                 // Hand back only when the real cursor is at the entry edge and
-                // is being pushed further outward. The old dx-only check
-                // released in the middle of the screen after a desktop switch.
-                let outward = if entry_edge == 1 {
-                    packet.a < 0
-                } else {
-                    packet.a > 0
+                // is being pushed further outward. The old code summed every
+                // delta since the switch; injected motion is accelerated and
+                // clamped, so that sum drifted away from the actual pointer
+                // and, once it was positive enough, every retry at the edge
+                // made no progress (the push only paid back the drift).
+                let cursor = win::cursor_pos().ok();
+                let at_edge = match (bounds.as_ref(), cursor) {
+                    (Some(bounds), Some(cursor)) => {
+                        if entry_edge == 1 {
+                            cursor.x <= bounds.left
+                        } else {
+                            cursor.x >= bounds.right - 1
+                        }
+                    }
+                    _ => false,
                 };
-                let at_edge = match bounds.as_ref() {
-                    Some(bounds) => win::cursor_pos()
-                        .ok()
-                        .map(|cursor| {
-                            if entry_edge == 1 {
-                                cursor.x <= bounds.left
-                            } else {
-                                cursor.x >= bounds.right - 1
-                            }
-                        })
-                        .unwrap_or(false),
-                    None => false,
-                };
-                let past = if entry_edge == 1 {
-                    virtual_x < -release_px
-                } else {
-                    virtual_x > release_px
-                };
-                if outward && at_edge && past {
-                    edge_hits += 1;
-                } else {
-                    edge_hits = 0;
-                }
-                // Require two consecutive outward packets at the edge: a single
-                // flick near the edge must not hand control back.
-                if edge_hits >= 2 {
+                // Positive points across the entry edge, towards the master.
+                let outward = if entry_edge == 1 { -packet.a } else { packet.a };
+                if edge_push.update(at_edge, outward) {
+                    let pushed = edge_push.pushed();
                     let (exit_y, ratio) = exit_position();
                     let mut release = Packet::new(PacketKind::Release, seq);
                     seq = seq.wrapping_add(1);
@@ -221,12 +205,12 @@ fn client_loop(socket: UdpSocket, stop: Arc<AtomicBool>, release_px: i32) {
                     release.flags = FLAG_RELEASE_POSITION;
                     let _ = socket.send_to(&release.encode(), addr);
                     controlled = false;
-                    edge_hits = 0;
+                    edge_push.reset();
                     submit(InjectEvent::Release);
                     log(
                         "session",
                         format!(
-                            "cursor at entry edge -> release (virtual_x={virtual_x}, edge={entry_edge}, y={exit_y}, ratio={ratio})"
+                            "cursor at entry edge -> release (push={pushed}px cursor={cursor:?}, edge={entry_edge}, y={exit_y}, ratio={ratio})"
                         ),
                     );
                     continue;

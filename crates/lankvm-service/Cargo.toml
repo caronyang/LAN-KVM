@@ -10,6 +10,7 @@ anyhow.workspace = true
 serde_json = "1"
 socket2 = "0.5"
 lankvm-net = { path = "../lankvm-net" }
+lankvm-input = { path = "../lankvm-input" }
 lankvm-platform = { path = "../lankvm-platform" }
 windows-service = { workspace = true }
 

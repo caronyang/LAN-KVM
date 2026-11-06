@@ -4,6 +4,8 @@
 //! platform. The Windows backend feeds it raw mouse deltas and the current
 //! cursor position.
 
+use std::cmp::Ordering;
+
 use lankvm_core::{Edge, Point, Rect};
 
 /// Detects an intentional "push through the edge" gesture.
@@ -102,6 +104,74 @@ pub fn at_edge(cursor: Point, bounds: Rect, edge: Edge) -> bool {
     }
 }
 
+/// Detects the deliberate outward push that hands control back to the peer.
+///
+/// The client used to keep one accumulator for the whole time it controlled
+/// the peer (sum of every motion delta since the switch). That sum drifts away
+/// from the real pointer: injected motion is accelerated and clamped at the
+/// screen edges, so a push at the far edge keeps adding while the cursor is
+/// already stuck. Moving back to the entry edge then "spends" the drift, and
+/// every retry there starts from the same value — after operating on the peer
+/// for a while, crossing back needs a single push larger than the drift, so it
+/// only works occasionally.
+///
+/// This tracker only counts the push that happens while the pointer is sitting
+/// on the entry edge, and clears on any inward move, so a retry always starts
+/// from zero.
+#[derive(Debug, Clone)]
+pub struct ReturnPush {
+    threshold_px: i32,
+    pushed: i32,
+    hits: u32,
+}
+
+impl ReturnPush {
+    pub fn new(threshold_px: i32) -> Self {
+        Self {
+            threshold_px: threshold_px.max(1),
+            pushed: 0,
+            hits: 0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.pushed = 0;
+        self.hits = 0;
+    }
+
+    /// How far the pointer has been pushed out through the entry edge in the
+    /// current attempt.
+    pub fn pushed(&self) -> i32 {
+        self.pushed
+    }
+
+    /// Call once per motion packet.
+    ///
+    /// `at_edge` is true when the pointer sits on the entry edge and
+    /// `outward_px` is the signed movement across it: positive points at the
+    /// other screen, negative points into this one, zero is vertical only.
+    /// Returns true once the push is deliberate (at least two consecutive
+    /// outward packets and `threshold_px` in total).
+    pub fn update(&mut self, at_edge: bool, outward_px: i32) -> bool {
+        if !at_edge {
+            self.reset();
+            return false;
+        }
+        match outward_px.cmp(&0) {
+            Ordering::Greater => {
+                self.pushed = self.pushed.saturating_add(outward_px);
+                self.hits += 1;
+            }
+            Ordering::Less => {
+                // Moving back into this screen cancels the attempt.
+                self.reset();
+            }
+            Ordering::Equal => {}
+        }
+        self.hits >= 2 && self.pushed >= self.threshold_px
+    }
+}
+
 /// Maps the cursor's position along `source` to the corresponding position on
 /// `target`, clamped to the target's edges.
 ///
@@ -185,6 +255,43 @@ mod tests {
         assert!(!d.update(Point::new(1919, 500), bounds(), 15.0, 0.0, 0));
         // 200 ms later: the previous 15 px must not count.
         assert!(!d.update(Point::new(1919, 500), bounds(), 10.0, 0.0, 200));
+    }
+
+    #[test]
+    fn return_push_needs_two_packets() {
+        let mut p = ReturnPush::new(10);
+        assert!(!p.update(true, 100));
+        assert!(p.update(true, 1));
+    }
+
+    #[test]
+    fn return_push_clears_when_leaving_the_edge() {
+        let mut p = ReturnPush::new(30);
+        // A long session leaves no credit behind.
+        assert!(!p.update(false, 5000));
+        assert!(!p.update(true, 20));
+        // Leaving and coming back starts the attempt again, but the old
+        // 20 px must not count.
+        assert!(!p.update(false, 0));
+        assert!(!p.update(true, 20));
+        assert!(p.update(true, 10));
+    }
+
+    #[test]
+    fn return_push_inward_motion_cancels() {
+        let mut p = ReturnPush::new(10);
+        assert!(!p.update(true, 8));
+        assert!(!p.update(true, -5));
+        assert!(!p.update(true, 8));
+        assert!(p.update(true, 3));
+    }
+
+    #[test]
+    fn return_push_vertical_motion_keeps_the_attempt() {
+        let mut p = ReturnPush::new(10);
+        assert!(!p.update(true, 6));
+        assert!(!p.update(true, 0));
+        assert!(p.update(true, 6));
     }
 
     #[test]
