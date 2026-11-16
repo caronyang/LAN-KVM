@@ -5,7 +5,7 @@ rem
 rem   cargo build --release -p lankvm-app -p lankvm-service
 rem   installer\build.cmd
 rem
-rem Output: dist-app\LAN-KVM-Setup-1.1.13.exe
+rem Output: dist-app\LAN-KVM-Setup-1.1.14.exe
 
 setlocal
 if "%ISCC%"=="" set "ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"

@@ -1,9 +1,14 @@
-//! Cross-machine clipboard sync (text / image / files).
+//! Cross-machine clipboard sync (text / image / files / rich formats).
 //!
 //! Transport is a small length-prefixed postcard protocol over TCP 45875.
 //! Only the paired `client` side listens; the paired `master` side connects
 //! and retries until the peer is reachable. Frames are bidirectional, so a
 //! copy on either machine reaches the other.
+//!
+//! Rich formats (`HTML Format`, `Rich Text Format`, `XML Spreadsheet`) are
+//! carried next to the plain text, which is what lets a copied Excel range
+//! paste as a table instead of a block of text. Peers that predate the rich
+//! frame simply fail to decode it and keep receiving text frames.
 //!
 //! Echo suppression: after a remote frame is written to the local clipboard,
 //! the watcher is acknowledged and a short window suppresses the resulting
@@ -34,6 +39,9 @@ const VERSION: u16 = 1;
 const MAX_FRAME: usize = 192 * 1024 * 1024;
 const MAX_FILES_TOTAL: usize = 128 * 1024 * 1024;
 const MAX_FILES: usize = 200;
+/// Excel's HTML can be surprisingly large because it inlines style rules.
+const MAX_RICH_FORMAT: usize = 48 * 1024 * 1024;
+const MAX_RICH_TOTAL: usize = 64 * 1024 * 1024;
 const HEARTBEAT: Duration = Duration::from_secs(10);
 
 /// Bumped for every accepted connection; older sessions see a mismatch and
@@ -67,6 +75,12 @@ struct WireFile {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct WireFormat {
+    name: String,
+    data: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 enum Frame {
     Ping,
     Text(String),
@@ -76,6 +90,13 @@ enum Frame {
         png: Vec<u8>,
     },
     Files(Vec<WireFile>),
+    /// Plain text plus rich clipboard formats, so the peer can paste with
+    /// formatting (Excel tables, Word styles). Added after `Files`, so the
+    /// wire tags of the existing variants do not move.
+    Rich {
+        text: String,
+        formats: Vec<WireFormat>,
+    },
 }
 
 fn now_ms() -> u64 {
@@ -398,6 +419,7 @@ fn current_clipboard() -> Option<ClipboardContent> {
             ClipboardContent::Text(text) => !text.is_empty(),
             ClipboardContent::Files(files) => !files.is_empty(),
             ClipboardContent::Image { png, .. } => !png.is_empty(),
+            ClipboardContent::Rich { text, formats } => !text.is_empty() || !formats.is_empty(),
         })
 }
 
@@ -446,6 +468,40 @@ fn build_frame(app: &Arc<App>, content: &ClipboardContent) -> Result<Frame> {
             }
             Frame::Files(files)
         }
+        ClipboardContent::Rich { text, formats } => {
+            let mut total = 0usize;
+            let mut kept = Vec::new();
+            for format in formats {
+                if !lankvm_clipboard::is_rich_format(&format.name) {
+                    continue;
+                }
+                if format.data.is_empty() {
+                    continue;
+                }
+                if format.data.len() > MAX_RICH_FORMAT || total + format.data.len() > MAX_RICH_TOTAL
+                {
+                    app.log(format!(
+                        "clipboard rich: skipping {} ({} bytes, size limit)",
+                        format.name,
+                        format.data.len()
+                    ));
+                    continue;
+                }
+                total += format.data.len();
+                kept.push(WireFormat {
+                    name: format.name.clone(),
+                    data: format.data.clone(),
+                });
+            }
+            if kept.is_empty() {
+                Frame::Text(text.clone())
+            } else {
+                Frame::Rich {
+                    text: text.clone(),
+                    formats: kept,
+                }
+            }
+        }
     })
 }
 
@@ -471,6 +527,16 @@ fn apply_frame(app: &Arc<App>, watcher: &Arc<Mutex<ClipboardWatcher>>, bytes: &[
             file_dir = Some(dir);
             ClipboardContent::Files(paths)
         }
+        Frame::Rich { text, formats } => ClipboardContent::Rich {
+            text: text.clone(),
+            formats: formats
+                .iter()
+                .map(|format| lankvm_clipboard::NamedFormat {
+                    name: format.name.clone(),
+                    data: format.data.clone(),
+                })
+                .collect(),
+        },
     };
 
     let mut last_err = None;
@@ -541,6 +607,14 @@ fn frame_fingerprint(frame: &Frame) -> u64 {
                 file.data.hash(&mut hasher);
             }
         }
+        Frame::Rich { text, formats } => {
+            4u8.hash(&mut hasher);
+            text.hash(&mut hasher);
+            for format in formats {
+                format.name.hash(&mut hasher);
+                format.data.hash(&mut hasher);
+            }
+        }
     }
     hasher.finish()
 }
@@ -558,6 +632,14 @@ fn frame_summary(frame: &Frame) -> String {
                 names.push("...");
             }
             format!("files ({}) [{}]", files.len(), names.join(", "))
+        }
+        Frame::Rich { text, formats } => {
+            let names: Vec<&str> = formats.iter().map(|f| f.name.as_str()).collect();
+            format!(
+                "rich ({} chars) [{}]",
+                text.chars().count(),
+                names.join(", ")
+            )
         }
     }
 }

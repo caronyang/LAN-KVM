@@ -48,6 +48,10 @@ fn run() -> Result<()> {
         Some("clipboard-files") => clipboard_files(args),
         #[cfg(not(windows))]
         Some("clipboard-files") => Err(anyhow!("LAN-KVM P0 is currently Windows-only")),
+        #[cfg(windows)]
+        Some("clipboard-dump") => clipboard_dump(args),
+        #[cfg(not(windows))]
+        Some("clipboard-dump") => Err(anyhow!("LAN-KVM P0 is currently Windows-only")),
         Some("file-test") => file_test(args),
         #[cfg(windows)]
         Some("local-winlogon-test") => local_winlogon_test(args),
@@ -393,6 +397,38 @@ fn clipboard_watch(mut args: impl Iterator<Item = String>) -> Result<()> {
     Ok(())
 }
 
+/// Diagnostic: print what `read_supported` sees right now, including the rich
+/// clipboard formats that decide whether a table paste keeps its layout.
+#[cfg(windows)]
+fn clipboard_dump(args: impl Iterator<Item = String>) -> Result<()> {
+    let mut rewrite = false;
+    let mut only_html = false;
+    for arg in args {
+        match arg.as_str() {
+            "--rewrite" => rewrite = true,
+            "--only-html" => only_html = true,
+            other => return Err(anyhow!("unknown clipboard-dump argument: {other}")),
+        }
+    }
+    let mut content = lankvm_clipboard::read_supported()?;
+    println!("{}", lankvm_clipboard::content_summary(&content));
+    if let lankvm_clipboard::ClipboardContent::Rich { text, formats } = &mut content {
+        if only_html {
+            formats.retain(|format| format.name == "HTML Format");
+        }
+        for format in formats.iter() {
+            println!("  format {:?}: {} bytes", format.name, format.data.len());
+        }
+        let preview: String = text.chars().take(400).collect();
+        println!("  text preview: {preview:?}");
+    }
+    if rewrite {
+        lankvm_clipboard::write_supported(&content)?;
+        println!("rewrote clipboard through lankvm-clipboard");
+    }
+    Ok(())
+}
+
 /// Diagnostic: put files on the clipboard with the same code path the app uses
 /// for received files. Used to verify that stale formats (e.g. Explorer's
 /// "Shell IDList Array") are cleared.
@@ -539,6 +575,7 @@ Usage:
   lankvm-devtools abs-test              Move the cursor with absolute coordinates
   lankvm-devtools clipboard-test [--files <path>...]  Clipboard text/image/file round-trip
   lankvm-devtools clipboard-watch [--seconds N]  Watch clipboard changes (metadata only)
+  lankvm-devtools clipboard-dump         Print the clipboard content the app would send
   lankvm-devtools file-test --source <file> --dest <dir> [--overwrite]
   lankvm-devtools local-winlogon-test [--port N] [--delay N]  Send P0 packets to localhost
   lankvm-devtools hook-test [options]   Install low-level hooks and log events

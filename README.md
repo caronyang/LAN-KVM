@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.13-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.14-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -12,17 +12,20 @@ Move the pointer past the screen edge, and the other machine takes over — incl
 Windows sign-in screen and UAC prompts. Clipboard (text / image / files) is shared in both
 directions, and the controlling machine's cursor disappears while the peer is in control.
 
-> **Status: v1.1.13 — reliable return to the master.** Verified on two Windows 11 machines on a
+> **Status: v1.1.14 — Excel table clipboard.** Verified on two Windows 11 machines on a
 > wired LAN: edge switching, sign-in-screen control, Num Lock, boot auto-start, and bidirectional
 > clipboard for text, screenshots and files.
 >
-> v1.1.13 fixes the return edge going unresponsive after operating on the peer for a while. The
-> client used to accumulate every motion delta since it took control; that sum drifts from the
-> real pointer (pointer acceleration, and motion lost to screen clamping), so each retry at the
-> entry edge started from the same offset and made no progress. It now counts only the push that
-> happens while the pointer is sitting on the entry edge. v1.1.12 moved the pointer before showing
-> it and confirmed the return height; v1.1.10 made it return at the exit height and fixed edge
-> switching after a display-mode change; v1.1.9 fixed the boot-time service crash.
+> v1.1.14 carries rich clipboard formats (HTML, RTF and Excel XML) next to the plain text, so a
+> range copied in Excel pastes on the other machine as a formatted table — borders, fills, number
+> formats and merged cells included — instead of flat text. v1.1.13 fixed the return edge going
+> unresponsive after operating on the peer for a while. The client used to accumulate every motion
+> delta since it took control; that sum drifts from the real pointer (pointer acceleration, and
+> motion lost to screen clamping), so each retry at the entry edge started from the same offset and
+> made no progress. It now counts only the push that happens while the pointer is sitting on the
+> entry edge. v1.1.12 moved the pointer before showing it and confirmed the return height; v1.1.10
+> made it return at the exit height and fixed edge switching after a display-mode change; v1.1.9
+> fixed the boot-time service crash.
 
 ---
 
@@ -33,8 +36,10 @@ directions, and the controlling machine's cursor disappears while the peer is in
 - **Works at the sign-in screen and UAC** — the client side runs a LocalSystem service plus a
   `winsta0\Winlogon` helper process, so you can click the password field and type on a machine
   that is still logged out.
-- **Bidirectional clipboard** — copy text, images or files on either machine and paste on the other
-  (TCP 45875, echo-suppressed, files land in `%LOCALAPPDATA%\LAN-KVM\clipboard\`).
+- **Bidirectional clipboard** — text, images, files, and rich formats: a range copied in Excel
+  (or content copied in Word) pastes on the other machine with its table layout and styling intact.
+  Plain-text targets still receive the text (TCP 45875, echo-suppressed, files land in
+  `%LOCALAPPDATA%\LAN-KVM\clipboard\`).
 - **Auto discovery and pairing** — LAN discovery, 3-digit pairing code, persistent IDs. Boot order
   and DHCP changes are handled automatically.
 - **Auto start** — service starts at boot, tray app starts at sign-in, reconnects on its own.
@@ -58,7 +63,7 @@ directions, and the controlling machine's cursor disappears while the peer is in
 Download the latest installer from **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)**:
 
 ```
-LAN-KVM-Setup-1.1.13.exe
+LAN-KVM-Setup-1.1.14.exe
 ```
 
 Run it (UAC → Yes), choose English or 繁體中文, then:
@@ -74,7 +79,7 @@ auto-start entry. Uninstall from Windows *Settings → Apps*.
 Silent install for IT deployment:
 
 ```powershell
-LAN-KVM-Setup-1.1.13.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.14.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## If the mouse gets stuck
@@ -109,7 +114,7 @@ Prerequisites: Rust 1.80+, Visual Studio Build Tools (MSVC), Inno Setup 6.7+ (in
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.13.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.14.exe
 ```
 
 Local checks:
@@ -137,6 +142,7 @@ cargo build -p lankvm-devtools
 - [Release notes v1.1.10](docs/release-notes-v1.1.10.md)
 - [Release notes v1.1.11](docs/release-notes-v1.1.11.md)
 - [Release notes v1.1.13](docs/release-notes-v1.1.13.md)
+- [Release notes v1.1.14](docs/release-notes-v1.1.14.md)
 - [Log rotation and bundles](docs/16-log-retention.md)
 - [AV / EDR and code signing strategy](docs/04-av-and-signing.md)
 
@@ -150,6 +156,8 @@ Most documents are written in Traditional Chinese.
   3 digits. Use it on a trusted network only. QUIC/TLS + SPAKE2 is planned.
 - **Windows only** — macOS/Linux are not implemented.
 - **Clipboard needs both machines signed in** — the sign-in screen supports keyboard/mouse only.
+- **Rich clipboard needs v1.1.14+ on both machines** — an older peer still syncs text, images and
+  files, but cannot apply Excel/Word rich frames.
 - **Multi-monitor / mixed DPI** is not verified yet.
 - Tray icons on Windows 11 may be hidden behind `^`; drag it out once.
 

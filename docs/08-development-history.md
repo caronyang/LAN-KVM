@@ -552,3 +552,29 @@ log 顯示 78 次切換全部都有對應的 Release（`b`、`flags=0x100`），
 - 4 個單元測試（偏移、重試、向內、垂直移動）
 
 詳細見 `docs/release-notes-v1.1.13.md`。
+
+---
+
+## 23. 2026-11-16：1.1.14 Excel 表格剪貼簿
+
+使用者回報：USB KVM 可以框選 Excel 表格複製、到另一台貼上仍是表格格式，LAN-KVM 貼上卻變成
+一堆純文字。
+
+根因：`lankvm-clipboard::read_supported` 先讀 `CF_UNICODETEXT` 就回傳。Excel 複製範圍時
+同時提供 `HTML Format`、`Rich Text Format`、`XML Spreadsheet`，但只有純文字被傳送。
+
+1.1.14 修正：
+
+- `lankvm-clipboard` 新增 `NamedFormat` / `ClipboardContent::Rich`，以
+  `RegisterClipboardFormatW` + `GetClipboardData` 讀取三種富格式原始 bytes
+- 依 `EndHTML`、RTF 最後一個 `}`、XML 最後一個 `>` 修剪 payload，避免 GlobalSize 的
+  配置器殘留
+- 寫入端在同一次 `EmptyClipboard` 後寫入 `CF_UNICODETEXT` 與所有富格式
+- `clipboard_sync` 新增 `Frame::Rich`（接在既有 variant 之後，協定版本不變）
+- 富格式上限每種 48 MB、合計 64 MB
+- 瀏覽器複製圖片（HTML + bitmap、無 RTF/XML）仍走圖片路徑，避免小畫家貼不上
+
+本機以 Excel COM 驗證 3×3 表格：框線、粗體、填色、`0.00` 數字格式與範圍在
+`read_supported` → `write_supported` → 貼上後全部保留。
+
+詳細見 `docs/release-notes-v1.1.14.md`。

@@ -1,7 +1,7 @@
-LAN-KVM 1.1.13
+LAN-KVM 1.1.14
 ==========
 
-這是一個**單一安裝檔**：LAN-KVM-Setup-1.1.13.exe
+這是一個**單一安裝檔**：LAN-KVM-Setup-1.1.14.exe
 App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝精靈有 English / 繁體中文可選；程式 UI 預設 English，右上角可切換中文。
 
@@ -13,7 +13,7 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 安裝
 ----
 1. 建議先從系統匣右鍵「停止連線」再安裝（避免升級時中斷遠端控制）。
-2. 執行 LAN-KVM-Setup-1.1.13.exe（會跳 UAC，按「是」）。
+2. 執行 LAN-KVM-Setup-1.1.14.exe（會跳 UAC，按「是」）。
 3. 安裝到 C:\Program Files\LAN-KVM，並自動：
    - 建立防火牆規則：UDP 45870 / 45871 / 45872、TCP 45873（log 回傳）、TCP 45875（剪貼簿）
    - 安裝並啟動 LAN-KVM SYSTEM 服務（登入畫面 / UAC），session agent 不顯示 console
@@ -75,6 +75,8 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
 跨機剪貼簿
 ----------
 - 任一台複製**文字 / 圖片 / 檔案**，另一台直接貼上。
+- 在 Excel 框選範圍複製，到另一台貼上會保留表格格式（框線、填色、數字格式、合併儲存格）；
+  Word 等富文字內容同樣會帶過去樣式，記事本仍收到純文字。
 - 傳輸：TCP 45875（只有 client 端監聽、master 端主動連線），雙向。
 - 連線建立時，master 會先送一次目前剪貼簿，之後兩邊只要剪貼簿變更就送。
 - 檔案會先複製到 `%LOCALAPPDATA%\LAN-KVM\clipboard\<時間>\`，
@@ -86,6 +88,7 @@ App 與 SYSTEM 服務都已內嵌，不需要其他檔案。
   clipboard listening on TCP 45875
   clipboard link up with <對方> (id)
   clipboard sent: text (12 chars) / image 640x480 (…) / files (2) [a.txt, b.txt]
+  clipboard sent: rich (46 chars) [HTML Format, Rich Text Format, XML Spreadsheet]
   clipboard received: files (1) [b.txt] -> C:\Users\...\LAN-KVM\clipboard\<時間>
 - 檔名相同、大小相同、內容相同的檔案貼上後看起來會一模一樣（例如兩台都有同一個安裝檔）。
   要驗證請用名稱不同的檔案。
@@ -185,5 +188,5 @@ B 先開機 / IP 變更
   2. 登入 B 後 `sc query LAN-KVM` 必須 RUNNING。
   3. `service.log` 要有 `identity announce`、`started session agent`；
      `session.log` 要有 `session agent started`、`winjector prestarted`。
-  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-1.1.13.exe`。
+  4. 若服務不是 RUNNING 或沒有上述 log，重新執行 `LAN-KVM-Setup-1.1.14.exe`。
 - 安裝失敗：看 %TEMP%\lankvm-setup.log。

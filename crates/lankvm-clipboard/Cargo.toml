@@ -17,4 +17,5 @@ clipboard-win.workspace = true
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_DataExchange",
+    "Win32_System_Memory",
 ] }

@@ -122,6 +122,26 @@ file drop: C:\...\fresh.txt
 - 只有「第一個」配對角色會被使用（單一 peer）；多 peer 之後再做。
 - 未加密：只在信任網段使用。
 
+### 1.8 富格式：Excel 表格（v1.1.14）
+
+Excel 複製範圍時會同時提供 `CF_UNICODETEXT`、`HTML Format`、`Rich Text Format` 與
+`XML Spreadsheet`。1.1.14 之前只讀第一種，所以貼到另一台只剩純文字。
+
+現在的流程：
+
+1. `read_supported()` 先以 `RegisterClipboardFormatW` + `GetClipboardData` 讀三種具名格式
+   的原始 bytes，再讀 `CF_UNICODETEXT` 當 fallback。
+2. 依文件結尾修剪：HTML 用 CF_HTML 標頭的 `EndHTML`、RTF 取最後一個 `}`、XML 取最後一個
+   `>`，避開 `GlobalSize` 的配置器殘留。
+3. `Frame::Rich { text, formats }` 同時攜帶文字與富格式（接在既有 variant 之後，協定
+   版本不變）。
+4. 接收端在一次 `EmptyClipboard` 後寫入 `CF_UNICODETEXT` 與所有具名格式；記事本用文字，
+   Excel／Word 用富格式。
+5. 瀏覽器「複製圖片」同時有 HTML 與 bitmap、但沒有 RTF/Excel XML，此時保留圖片路徑，
+   避免小畫家貼不上。
+
+上限：每種格式 48 MB、合計 64 MB，超過就只送純文字。
+
 ---
 
 ## 2. 控制端游標隱藏
@@ -185,5 +205,5 @@ file drop: C:\...\fresh.txt
 
 - 剪貼簿連線目前與 P0 session 無關（只要配對就同步）；之後應與 QUIC 串流整合。
 - 檔案是先整包讀進記憶體再送，超大檔案會吃 RAM；下一版改成分塊串流。
-- 尚未支援「遠端剪貼簿格式化文字（HTML/RTF）」與「拖放」。
+- 富格式剪貼簿（HTML / RTF / Excel XML）已於 v1.1.14 支援；拖放仍未做。
 - 游標 overlay 會擋住 master 本機點擊（控制期間本來就該如此）；尚未做「保留本機點擊」模式。
