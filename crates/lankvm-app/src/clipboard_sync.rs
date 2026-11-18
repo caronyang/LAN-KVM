@@ -14,6 +14,7 @@
 //! the watcher is acknowledged and a short window suppresses the resulting
 //! local change so it is not sent back.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -39,6 +40,10 @@ const VERSION: u16 = 1;
 const MAX_FRAME: usize = 192 * 1024 * 1024;
 const MAX_FILES_TOTAL: usize = 128 * 1024 * 1024;
 const MAX_FILES: usize = 200;
+/// A copied folder becomes one tree frame. Entries include directories, so
+/// the limit is higher than the flat file limit but still bounded.
+const MAX_TREE_ENTRIES: usize = 5000;
+const MAX_TREE_DEPTH: usize = 32;
 /// Excel's HTML can be surprisingly large because it inlines style rules.
 const MAX_RICH_FORMAT: usize = 48 * 1024 * 1024;
 const MAX_RICH_TOTAL: usize = 64 * 1024 * 1024;
@@ -80,6 +85,14 @@ struct WireFormat {
     data: Vec<u8>,
 }
 
+/// One item of a copied directory tree. `path` is relative to the bundle root
+/// and uses `/` separators; `data` is `None` for a directory.
+#[derive(Debug, Serialize, Deserialize)]
+struct WireEntry {
+    path: String,
+    data: Option<Vec<u8>>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 enum Frame {
     Ping,
@@ -97,6 +110,9 @@ enum Frame {
         text: String,
         formats: Vec<WireFormat>,
     },
+    /// Copied folder(s) with their internal layout preserved. Sent instead of
+    /// `Files` when the selection contains a directory.
+    Tree(Vec<WireEntry>),
 }
 
 fn now_ms() -> u64 {
@@ -432,41 +448,17 @@ fn build_frame(app: &Arc<App>, content: &ClipboardContent) -> Result<Frame> {
             png: png.clone(),
         },
         ClipboardContent::Files(paths) => {
-            let mut total = 0usize;
-            let mut files = Vec::new();
-            for path in paths {
-                if files.len() >= MAX_FILES {
-                    app.log("clipboard files: too many entries; sending the first 200");
-                    break;
-                }
-                let meta = fs::metadata(path)
-                    .with_context(|| format!("stat clipboard file {}", path.display()))?;
-                if !meta.is_file() {
-                    app.log(format!(
-                        "clipboard files: skipping non-file {}",
-                        path.display()
-                    ));
-                    continue;
-                }
-                if total + meta.len() as usize > MAX_FILES_TOTAL {
-                    app.log(format!(
-                        "clipboard files: skipping {} (size limit)",
-                        path.display()
-                    ));
-                    continue;
-                }
-                let data = fs::read(path)
-                    .with_context(|| format!("read clipboard file {}", path.display()))?;
-                total += data.len();
-                files.push(WireFile {
-                    name: sanitize_name(path),
-                    data,
-                });
+            let has_directory = paths.iter().any(|path| {
+                fs::symlink_metadata(path)
+                    .map(|meta| meta.is_dir())
+                    .unwrap_or(false)
+            });
+            if has_directory {
+                let mut log = |message: String| app.log(message);
+                Frame::Tree(build_tree_entries(paths, &mut log)?)
+            } else {
+                build_file_frame(app, paths)?
             }
-            if files.is_empty() {
-                bail!("no readable files");
-            }
-            Frame::Files(files)
         }
         ClipboardContent::Rich { text, formats } => {
             let mut total = 0usize;
@@ -505,6 +497,280 @@ fn build_frame(app: &Arc<App>, content: &ClipboardContent) -> Result<Frame> {
     })
 }
 
+fn build_file_frame(app: &Arc<App>, paths: &[PathBuf]) -> Result<Frame> {
+    let mut total = 0usize;
+    let mut files = Vec::new();
+    for path in paths {
+        if files.len() >= MAX_FILES {
+            app.log("clipboard files: too many entries; sending the first 200");
+            break;
+        }
+        let meta = fs::metadata(path)
+            .with_context(|| format!("stat clipboard file {}", path.display()))?;
+        if !meta.is_file() {
+            app.log(format!(
+                "clipboard files: skipping non-file {}",
+                path.display()
+            ));
+            continue;
+        }
+        if total + meta.len() as usize > MAX_FILES_TOTAL {
+            app.log(format!(
+                "clipboard files: skipping {} (size limit)",
+                path.display()
+            ));
+            continue;
+        }
+        let data =
+            fs::read(path).with_context(|| format!("read clipboard file {}", path.display()))?;
+        total += data.len();
+        files.push(WireFile {
+            name: sanitize_name(path),
+            data,
+        });
+    }
+    if files.is_empty() {
+        bail!("no readable files");
+    }
+    Ok(Frame::Files(files))
+}
+
+/// Walks the selected directories (or files) into a flat list of relative
+/// entries. Reparse points are skipped so a junction cannot loop the scan.
+fn build_tree_entries(paths: &[PathBuf], log: &mut dyn FnMut(String)) -> Result<Vec<WireEntry>> {
+    let mut used_roots: HashSet<String> = HashSet::new();
+    let mut entries: Vec<WireEntry> = Vec::new();
+    let mut total = 0usize;
+
+    for path in paths {
+        if entries.len() >= MAX_TREE_ENTRIES {
+            log("clipboard tree: entry limit reached; sending a partial selection".to_string());
+            break;
+        }
+        if path.file_name().is_none() {
+            log(format!(
+                "clipboard tree: skipping drive root {}",
+                path.display()
+            ));
+            continue;
+        }
+        let meta = match fs::symlink_metadata(path) {
+            Ok(meta) => meta,
+            Err(err) => {
+                log(format!(
+                    "clipboard tree: cannot stat {}: {err}",
+                    path.display()
+                ));
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            log(format!("clipboard tree: skipping link {}", path.display()));
+            continue;
+        }
+        let root = unique_root_name(path, &mut used_roots);
+        if meta.is_dir() {
+            if is_directory_link(&meta) {
+                log(format!(
+                    "clipboard tree: skipping directory link {}",
+                    path.display()
+                ));
+                continue;
+            }
+            collect_dir(path, &root, 1, &mut entries, &mut total, log);
+        } else if meta.is_file() {
+            let size = meta.len() as usize;
+            if size > MAX_FILES_TOTAL || total.saturating_add(size) > MAX_FILES_TOTAL {
+                log(format!(
+                    "clipboard tree: skipping {} (size limit)",
+                    path.display()
+                ));
+                continue;
+            }
+            match fs::read(path) {
+                Ok(data) => {
+                    if total.saturating_add(data.len()) > MAX_FILES_TOTAL {
+                        log(format!(
+                            "clipboard tree: skipping {} (size limit)",
+                            path.display()
+                        ));
+                        continue;
+                    }
+                    total += data.len();
+                    entries.push(WireEntry {
+                        path: root,
+                        data: Some(data),
+                    });
+                }
+                Err(err) => log(format!(
+                    "clipboard tree: cannot read {}: {err}",
+                    path.display()
+                )),
+            }
+        } else {
+            log(format!(
+                "clipboard tree: skipping special file {}",
+                path.display()
+            ));
+        }
+    }
+
+    if entries.is_empty() {
+        bail!("no readable files in the selection");
+    }
+    Ok(entries)
+}
+
+fn collect_dir(
+    dir: &Path,
+    rel: &str,
+    depth: usize,
+    entries: &mut Vec<WireEntry>,
+    total: &mut usize,
+    log: &mut dyn FnMut(String),
+) {
+    if entries.len() >= MAX_TREE_ENTRIES {
+        return;
+    }
+    if depth > MAX_TREE_DEPTH {
+        log(format!(
+            "clipboard tree: depth limit reached at {}",
+            dir.display()
+        ));
+        return;
+    }
+    entries.push(WireEntry {
+        path: rel.to_string(),
+        data: None,
+    });
+
+    let mut children: Vec<PathBuf> = match fs::read_dir(dir) {
+        Ok(iter) => iter
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .collect(),
+        Err(err) => {
+            log(format!(
+                "clipboard tree: cannot list {}: {err}",
+                dir.display()
+            ));
+            return;
+        }
+    };
+    children.sort();
+
+    for child in children {
+        if entries.len() >= MAX_TREE_ENTRIES {
+            log("clipboard tree: entry limit reached; sending a partial tree".to_string());
+            return;
+        }
+        let meta = match fs::symlink_metadata(&child) {
+            Ok(meta) => meta,
+            Err(err) => {
+                log(format!(
+                    "clipboard tree: cannot stat {}: {err}",
+                    child.display()
+                ));
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            log(format!("clipboard tree: skipping link {}", child.display()));
+            continue;
+        }
+        let Some(name) = sanitized_component(&child) else {
+            log(format!(
+                "clipboard tree: skipping unusable name {}",
+                child.display()
+            ));
+            continue;
+        };
+        let child_rel = format!("{rel}/{name}");
+        if meta.is_dir() {
+            if is_directory_link(&meta) {
+                log(format!(
+                    "clipboard tree: skipping directory link {}",
+                    child.display()
+                ));
+                continue;
+            }
+            collect_dir(&child, &child_rel, depth + 1, entries, total, log);
+        } else if meta.is_file() {
+            let size = meta.len() as usize;
+            if size > MAX_FILES_TOTAL || total.saturating_add(size) > MAX_FILES_TOTAL {
+                log(format!(
+                    "clipboard tree: skipping {} (size limit)",
+                    child.display()
+                ));
+                continue;
+            }
+            match fs::read(&child) {
+                Ok(data) => {
+                    if total.saturating_add(data.len()) > MAX_FILES_TOTAL {
+                        log(format!(
+                            "clipboard tree: skipping {} (size limit)",
+                            child.display()
+                        ));
+                        continue;
+                    }
+                    *total += data.len();
+                    entries.push(WireEntry {
+                        path: child_rel,
+                        data: Some(data),
+                    });
+                }
+                Err(err) => log(format!(
+                    "clipboard tree: cannot read {}: {err}",
+                    child.display()
+                )),
+            }
+        }
+    }
+}
+
+/// Junctions / mount points are directories with a reparse attribute, but
+/// Rust does not report them as symlinks. Walking into one can duplicate or
+/// loop a tree, so they are skipped. Cloud placeholder *files* are reparse
+/// points too and must still be read, which is why this only applies to dirs.
+fn is_directory_link(meta: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = meta;
+        false
+    }
+}
+
+fn sanitized_component(path: &Path) -> Option<String> {
+    let name = sanitize_name(path);
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+fn unique_root_name(path: &Path, used: &mut HashSet<String>) -> String {
+    let base = sanitize_name(path);
+    let base = if base.is_empty() {
+        "item".to_string()
+    } else {
+        base
+    };
+    let mut name = base.clone();
+    let mut index = 2;
+    while !used.insert(name.to_lowercase()) {
+        name = format!("{base} ({index})");
+        index += 1;
+    }
+    name
+}
+
 fn apply_frame(app: &Arc<App>, watcher: &Arc<Mutex<ClipboardWatcher>>, bytes: &[u8]) -> Result<()> {
     let frame: Frame = postcard::from_bytes(bytes).context("decode clipboard frame")?;
     let summary = frame_summary(&frame);
@@ -537,6 +803,11 @@ fn apply_frame(app: &Arc<App>, watcher: &Arc<Mutex<ClipboardWatcher>>, bytes: &[
                 })
                 .collect(),
         },
+        Frame::Tree(entries) => {
+            let (paths, dir) = write_incoming_tree(entries, &config_dir().join("clipboard"))?;
+            file_dir = Some(dir);
+            ClipboardContent::Files(paths)
+        }
     };
 
     let mut last_err = None;
@@ -615,6 +886,13 @@ fn frame_fingerprint(frame: &Frame) -> u64 {
                 format.data.hash(&mut hasher);
             }
         }
+        Frame::Tree(entries) => {
+            5u8.hash(&mut hasher);
+            for entry in entries {
+                entry.path.hash(&mut hasher);
+                entry.data.hash(&mut hasher);
+            }
+        }
     }
     hasher.finish()
 }
@@ -640,6 +918,16 @@ fn frame_summary(frame: &Frame) -> String {
                 text.chars().count(),
                 names.join(", ")
             )
+        }
+        Frame::Tree(entries) => {
+            let files = entries.iter().filter(|entry| entry.data.is_some()).count();
+            let dirs = entries.len().saturating_sub(files);
+            let bytes: usize = entries
+                .iter()
+                .filter_map(|entry| entry.data.as_ref())
+                .map(|data| data.len())
+                .sum();
+            format!("tree ({files} files, {dirs} dirs, {bytes} bytes)")
         }
     }
 }
@@ -670,6 +958,71 @@ fn write_incoming_files(files: &[WireFile]) -> Result<(Vec<PathBuf>, PathBuf)> {
         bail!("empty clipboard file bundle");
     }
     Ok((paths, dir))
+}
+
+fn write_incoming_tree(entries: &[WireEntry], root: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
+    cleanup_clipboard_dirs(root);
+    let dir = root.join(now_ms().to_string());
+    fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for entry in entries.iter().take(MAX_TREE_ENTRIES) {
+        let Some(relative) = safe_relative(&entry.path) else {
+            continue;
+        };
+        let target = dir.join(&relative);
+        if !target.starts_with(&dir) {
+            continue;
+        }
+        match &entry.data {
+            None => fs::create_dir_all(&target)
+                .with_context(|| format!("create clipboard dir {}", target.display()))?,
+            Some(data) => {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)
+                        .with_context(|| format!("create {}", parent.display()))?;
+                }
+                fs::write(&target, data)
+                    .with_context(|| format!("write clipboard file {}", target.display()))?;
+            }
+        }
+        if let Some(top) = relative.components().next() {
+            let top_path = dir.join(top.as_os_str());
+            if !roots.contains(&top_path) {
+                roots.push(top_path);
+            }
+        }
+    }
+
+    if roots.is_empty() {
+        bail!("empty clipboard tree");
+    }
+    Ok((roots, dir))
+}
+
+/// Turns a wire path into a relative path that cannot escape the bundle:
+/// `..`, drive prefixes and absolute roots are rejected. Components are
+/// sanitised again because the peer is not trusted to have done it.
+fn safe_relative(path: &str) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for part in path.split(['/', '\\']) {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." || part.ends_with(':') {
+            return None;
+        }
+        let clean = sanitize_str(part);
+        if clean.is_empty() {
+            continue;
+        }
+        out.push(clean);
+    }
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 fn cleanup_clipboard_dirs(root: &Path) {
@@ -729,4 +1082,145 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
         }
     }
     dir.join(format!("file-{}{ext}", now_ms()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    fn temp_root(tag: &str) -> PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "lankvm-tree-{}-{}-{}",
+            std::process::id(),
+            tag,
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn scan_keeps_nested_shape_and_empty_dirs() {
+        let src = temp_root("scan");
+        fs::create_dir_all(src.join("album/2026")).unwrap();
+        fs::create_dir_all(src.join("album/empty")).unwrap();
+        fs::write(src.join("album/cover.txt"), b"cover").unwrap();
+        fs::write(src.join("album/2026/a.txt"), b"a").unwrap();
+
+        let mut messages = Vec::new();
+        let mut log = |message: String| messages.push(message);
+        let entries = build_tree_entries(&[src.join("album")], &mut log).unwrap();
+        let paths: Vec<&str> = entries.iter().map(|entry| entry.path.as_str()).collect();
+
+        assert!(paths.contains(&"album"));
+        assert!(paths.contains(&"album/cover.txt"));
+        assert!(paths.contains(&"album/2026"));
+        assert!(paths.contains(&"album/2026/a.txt"));
+        assert!(paths.contains(&"album/empty"));
+        assert_eq!(
+            entries.iter().filter(|entry| entry.data.is_some()).count(),
+            2
+        );
+        assert!(messages.is_empty(), "{messages:?}");
+
+        let _ = fs::remove_dir_all(&src);
+    }
+
+    #[test]
+    fn same_basename_roots_are_disambiguated() {
+        let src = temp_root("roots");
+        fs::create_dir_all(src.join("a/album")).unwrap();
+        fs::create_dir_all(src.join("b/album")).unwrap();
+        fs::write(src.join("a/album/one.txt"), b"1").unwrap();
+        fs::write(src.join("b/album/two.txt"), b"2").unwrap();
+
+        let mut log = |_message: String| {};
+        let entries =
+            build_tree_entries(&[src.join("a/album"), src.join("b/album")], &mut log).unwrap();
+        let paths: Vec<&str> = entries.iter().map(|entry| entry.path.as_str()).collect();
+
+        assert!(paths.contains(&"album"));
+        assert!(paths.contains(&"album (2)"));
+        assert!(paths.contains(&"album/one.txt"));
+        assert!(paths.contains(&"album (2)/two.txt"));
+        let _ = fs::remove_dir_all(&src);
+    }
+
+    #[test]
+    fn receive_writes_structure_and_rejects_traversal() {
+        let base = temp_root("recv");
+        let entries = vec![
+            WireEntry {
+                path: "album".into(),
+                data: None,
+            },
+            WireEntry {
+                path: "album/a.txt".into(),
+                data: Some(b"a".to_vec()),
+            },
+            WireEntry {
+                path: "album/sub".into(),
+                data: None,
+            },
+            WireEntry {
+                path: "album/sub/b.txt".into(),
+                data: Some(b"b".to_vec()),
+            },
+            WireEntry {
+                path: "../evil.txt".into(),
+                data: Some(b"evil".to_vec()),
+            },
+            WireEntry {
+                path: "C:/absolute.txt".into(),
+                data: Some(b"absolute".to_vec()),
+            },
+        ];
+
+        let (roots, dir) = write_incoming_tree(&entries, &base).unwrap();
+        assert_eq!(roots.len(), 1);
+        assert!(roots[0].ends_with("album"));
+        assert_eq!(fs::read(dir.join("album/a.txt")).unwrap(), b"a");
+        assert_eq!(fs::read(dir.join("album/sub/b.txt")).unwrap(), b"b");
+        assert!(dir.join("album/sub").is_dir());
+        assert!(!base.join("evil.txt").exists());
+        assert!(!base.join("absolute.txt").exists());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn safe_relative_rejects_escape_attempts() {
+        assert!(safe_relative("a/b.txt").is_some());
+        assert!(safe_relative("a\\b.txt").is_some());
+        assert!(safe_relative("..").is_none());
+        assert!(safe_relative("a/../../b.txt").is_none());
+        assert!(safe_relative("C:/Windows/evil.txt").is_none());
+        assert!(safe_relative("/").is_none());
+    }
+
+    #[test]
+    fn tree_frame_keeps_wire_tags_and_round_trips() {
+        let frame = Frame::Tree(vec![
+            WireEntry {
+                path: "album".into(),
+                data: None,
+            },
+            WireEntry {
+                path: "album/a.txt".into(),
+                data: Some(b"a".to_vec()),
+            },
+        ]);
+        let bytes = postcard::to_allocvec(&frame).unwrap();
+        // Tree is appended after the existing variants, so its tag is 5 and
+        // older peers keep interpreting tags 0-4 exactly as before.
+        assert_eq!(bytes[0], 5);
+
+        let decoded: Frame = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(frame_fingerprint(&frame), frame_fingerprint(&decoded));
+        assert_eq!(frame_summary(&frame), "tree (1 files, 1 dirs, 1 bytes)");
+        assert_eq!(frame_summary(&decoded), frame_summary(&frame));
+    }
 }

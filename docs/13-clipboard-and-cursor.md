@@ -142,6 +142,24 @@ Excel 複製範圍時會同時提供 `CF_UNICODETEXT`、`HTML Format`、`Rich Te
 
 上限：每種格式 48 MB、合計 64 MB，超過就只送純文字。
 
+### 1.9 目錄複製（v1.1.15）
+
+Explorer 複製資料夾時，`CF_HDROP` 裡是目錄路徑。1.1.14 之前 `build_frame` 會跳過所有
+非檔案項目，所以整個目錄複製不會有任何反應。
+
+現在的流程：
+
+1. 選取中含目錄時改走 `Frame::Tree`，每個 `WireEntry { path, data }` 的 `path` 是相對於
+   選取根的路徑，`data = None` 代表目錄。
+2. 掃描會保留子資料夾、空目錄與相對結構；同名根目錄自動加上 ` (2)`。
+3. 跳過目錄 symlink／junction 與檔案 symlink（避免遞迴）；雲端檔案仍會讀取。
+   深度上限 32、5,000 個項目、128 MB。
+4. 接收端逐段 sanitize，拒絕 `..`、磁碟機前綴與絕對路徑，寫入
+   `%LOCALAPPDATA%\LAN-KVM\clipboard\<時間>\` 後，以 CF_HDROP 指向根項目。
+5. 貼上時 Explorer 依 CF_HDROP 建立同樣的目錄樹；空目錄也會建立。
+
+限制：不保留檔案屬性、ACL 與時間戳記；超過上限會傳送部分內容並寫 log。
+
 ---
 
 ## 2. 控制端游標隱藏

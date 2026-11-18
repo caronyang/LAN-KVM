@@ -240,6 +240,7 @@ Log：
 
 ```
 dist-app/
+  LAN-KVM-Setup-1.1.15.exe      527B08B0FBEEB623DB479CAD8583163A98D4A1525D9F376948050F4C68BCF89E
   LAN-KVM-Setup-1.1.14.exe      55FBEEDD920AD94DA8539E97CFF73C042D63217B921E29F2DD85DBC2C2FD6E95
   LAN-KVM-Setup-1.1.13.exe      030ECAED1D9CCA3B185D71F8D2B2F6052D1706FED19C41E68FC68302E263F946
   LAN-KVM-Setup-1.0.0.exe       C399AE8ABC1B810C602E2933F3174A8F5136376C16FBF22B7913169B648B27E0
@@ -249,7 +250,7 @@ dist-app/
   README.txt
 ```
 
-> **`1.1.14` 是目前版本**（Excel 表格剪貼簿同步，公開 release `v1.1.14`）。
+> **`1.1.15` 是目前版本**（目錄剪貼簿，公開 release `v1.1.15`）。
 > `v1.0.0` 是首個公開發佈版。建置方式與安裝/解除安裝細節見
 > [`docs/14-bilingual-and-inno.md`](14-bilingual-and-inno.md)、
 > [`docs/15-latency-and-reconnect.md`](15-latency-and-reconnect.md)。
@@ -287,6 +288,7 @@ Get-FileHash $env:TEMP\lk-extract\*.exe
 8. **未實作多螢幕版面**：目前是單一左/右關係。
 9. **Windows 11 系統匣**：新圖示預設收在「^」；第一次要手動拖到工作列固定。這是 OS 行為，程式無法強制。
 10. **富格式剪貼簿（Excel 表格）需要兩台都是 1.1.14 以上**：舊版收到 `Rich` frame 會解碼失敗並寫 log，文字／圖片／檔案仍可同步。
+11. **目錄複製需要兩台都是 1.1.15 以上**：舊版會丟棄 `Tree` frame。目錄上限 5,000 個項目／128 MB、跳過 junction，且不保留屬性／ACL／時間戳記。
 
 ---
 

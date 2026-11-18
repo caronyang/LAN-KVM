@@ -1,7 +1,7 @@
 # LAN-KVM
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.1.14-2ea44f?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.15-2ea44f?style=flat-square)
 ![UI](https://img.shields.io/badge/UI-English%20%2F%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-E67E22?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)
 
@@ -11,16 +11,15 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 把游標推過螢幕邊界，另一台就接手——包含 **Windows 登入畫面與 UAC**。
 雙向剪貼簿（文字／圖片／檔案）與跨機檔案傳輸，控制期間原電腦的游標會消失。
 
-> **狀態：v1.1.14（Excel 表格剪貼簿）。** 已在兩台 Windows 11 實機（有線區域網路）驗收：
-> 邊界切換、登入畫面操作、Num Lock、開機自動啟動、雙向剪貼簿（文字／截圖／檔案）。
+> **狀態：v1.1.15（目錄剪貼簿）。** 已在兩台 Windows 11 實機（有線區域網路）驗收：
+> 邊界切換、登入畫面操作、Num Lock、開機自動啟動、雙向剪貼簿（文字／表格／截圖／檔案／目錄）。
 >
-> v1.1.14 會在純文字之外一併傳送富格式（HTML、RTF、Excel XML），所以在 Excel 框選的表格，
-> 貼到另一台仍是有框線、填色、數字格式與合併儲存格的表格，而不是一堆純文字。
-> v1.1.13 修正「在被控端操作一段時間後，推邊界回不去、要試很多次」：client 原本把取得控制後
-> 的所有滑鼠位移累加成一個總和，但這個總和會偏離實際游標（滑鼠加速、以及被螢幕邊緣夾掉的
-> 位移），每次在邊界重試都從同一個偏移量開始，所以沒有進展。現在只計算「游標真的貼在邊界時」
-> 的推力。v1.1.12 改成先移動再顯示游標並確認回程高度；v1.1.10 讓游標回到離開高度、修正顯示
-> 模式改變後邊界失效；v1.1.9 修正開機時 service 的 `Instant` underflow panic。
+> v1.1.15 支援複製整個目錄：子資料夾（包含空目錄）與相對路徑都會保留，貼到另一台會建立
+> 同樣的目錄樹，而不是完全沒反應。v1.1.14 會在純文字之外一併傳送富格式（HTML、RTF、Excel
+> XML），所以在 Excel 框選的表格，貼到另一台仍是有框線、填色、數字格式與合併儲存格的表格。
+> v1.1.13 修正「在被控端操作一段時間後，推邊界回不去、要試很多次」；v1.1.12 改成先移動再
+> 顯示游標並確認回程高度；v1.1.10 讓游標回到離開高度、修正顯示模式改變後邊界失效；
+> v1.1.9 修正開機時 service 的 `Instant` underflow panic。
 
 ---
 
@@ -30,8 +29,9 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
   切入推力、時間窗、回切越界都可調整。
 - **登入畫面／UAC 可操作**：client 端由 LocalSystem 服務 + `winsta0\Winlogon`
   helper process 注入，即使對方還沒登入，也能點密碼欄位、輸入密碼。
-- **雙向剪貼簿**：任一台複製文字／圖片／檔案，另一台直接貼上；在 Excel 框選的範圍或 Word
-  內容會一併帶過去表格格式與樣式，記事本等純文字目標仍收到純文字
+- **雙向剪貼簿**：任一台複製文字／圖片／檔案／整個目錄，另一台直接貼上；在 Excel 框選的
+  範圍或 Word 內容會一併帶過去表格格式與樣式，複製目錄會保留子資料夾與相對路徑，
+  記事本等純文字目標仍收到純文字
   （TCP 45875、回音抑制；檔案會放在 `%LOCALAPPDATA%\LAN-KVM\clipboard\`）。
 - **自動探索與配對**：區網探索、3 位數配對碼、持久化 ID；
   開機順序、DHCP 換 IP 都會自動處理。
@@ -55,7 +55,7 @@ Windows 軟體式 KVM：在同一個區域網路的 2–3 台電腦之間共用�
 從 **[Releases](https://github.com/caronyang/LAN-KVM/releases/latest)** 下載最新安裝檔：
 
 ```
-LAN-KVM-Setup-1.1.14.exe
+LAN-KVM-Setup-1.1.15.exe
 ```
 
 執行（UAC 按「是」），選 English 或 繁體中文，然後：
@@ -71,7 +71,7 @@ LAN-KVM-Setup-1.1.14.exe
 IT 大量部署可用無聲安裝：
 
 ```powershell
-LAN-KVM-Setup-1.1.14.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+LAN-KVM-Setup-1.1.15.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 ## 卡住時（緊急取回）
@@ -105,7 +105,7 @@ LAN-KVM-Setup-1.1.14.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 ```powershell
 cargo build --release -p lankvm-app -p lankvm-service
-installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.14.exe
+installer\build.cmd        # -> dist-app\LAN-KVM-Setup-1.1.15.exe
 ```
 
 本機檢查：
@@ -134,6 +134,7 @@ cargo build -p lankvm-devtools
 - [Release notes v1.1.11](docs/release-notes-v1.1.11.md)
 - [Release notes v1.1.13](docs/release-notes-v1.1.13.md)
 - [Release notes v1.1.14](docs/release-notes-v1.1.14.md)
+- [Release notes v1.1.15](docs/release-notes-v1.1.15.md)
 - [紀錄輪替與打包](docs/16-log-retention.md)
 - [防毒／EDR 與程式簽章策略](docs/04-av-and-signing.md)
 
@@ -147,6 +148,9 @@ cargo build -p lankvm-devtools
 - **剪貼簿需要兩台都登入**：登入畫面只支援鍵鼠。
 - **富格式剪貼簿需要兩台都是 v1.1.14 以上**：舊版仍可同步文字／圖片／檔案，但無法套用
   Excel／Word 的富格式 frame。
+- **目錄複製需要兩台都是 v1.1.15 以上**：舊版會丟棄 tree frame；可改為複製目錄內的檔案。
+  目錄上限 5,000 個項目／128 MB，會跳過目錄 junction／symlink，且不保留檔案屬性、
+  ACL 與時間戳記。
 - **多螢幕／混合 DPI** 尚未實機驗收。
 - Windows 11 的托盤圖示可能收在 `^` 裡，第一次請拖到工作列固定。
 

@@ -578,3 +578,30 @@ log 顯示 78 次切換全部都有對應的 Release（`b`、`flags=0x100`），
 `read_supported` → `write_supported` → 貼上後全部保留。
 
 詳細見 `docs/release-notes-v1.1.14.md`。
+
+---
+
+## 24. 2026-11-18：1.1.15 目錄剪貼簿
+
+使用者回報：在 Explorer 複製整個資料夾，到另一台沒有反應。
+
+根因：`build_frame` 只接受 `meta.is_file()`，遇到目錄就寫
+`clipboard files: skipping non-file` 後跳過；若整個選取只有目錄，最後以
+`no readable files` 結束，完全不會送出。
+
+1.1.15 修正：
+
+- 新增 `Frame::Tree(Vec<WireEntry>)`：`WireEntry { path, data }`，`path` 是相對於
+  選取根的路徑（`/` 分隔），`data` 為 `None` 代表目錄
+- 遞迴掃描保留子資料夾、空目錄與相對結構；同名根目錄自動變成 `name (2)`
+- 跳過目錄 symlink／junction（directory reparse point），避免連結造成無限遞迴；
+  雲端檔案（file reparse point）仍會讀取。上限：深度 32、5,000 個項目、128 MB
+- 接收端逐段 sanitize，拒絕 `..`、磁碟機前綴與絕對路徑，再寫入暫存 bundle
+- 以 CF_HDROP 指向 bundle 內的根項目，Explorer 貼上即建立同樣的目錄樹
+- 新增 5 個單元測試：巢狀結構／空目錄、同名根、接收結構與路徑逃逸、wire tag 與
+  fingerprint
+
+`Tree` 接在既有 frame 之後（tag 5），舊版對方會解碼失敗並寫 log；文字／圖片／檔案不受
+影響。兩台都要 1.1.15 才能複製目錄。
+
+詳細見 `docs/release-notes-v1.1.15.md`。
